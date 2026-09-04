@@ -1,0 +1,128 @@
+import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
+
+import 'app_lock_service.dart';
+
+class LockScreen extends StatefulWidget {
+  final AppLockService lockService;
+  final VoidCallback onUnlocked;
+  final bool biometricEnabled;
+  /// Bumped by the parent only when it's safe to show the biometric prompt
+  /// (app genuinely in the foreground) - never attempted from [initState],
+  /// which can fire while still backgrounded (e.g. behind a share sheet).
+  final int biometricTrigger;
+
+  const LockScreen({
+    super.key,
+    required this.lockService,
+    required this.onUnlocked,
+    required this.biometricEnabled,
+    required this.biometricTrigger,
+  });
+
+  @override
+  State<LockScreen> createState() => _LockScreenState();
+}
+
+class _LockScreenState extends State<LockScreen> {
+  final _pinController = TextEditingController();
+  String? _error;
+  bool _checking = false;
+
+  @override
+  void didUpdateWidget(covariant LockScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.biometricEnabled &&
+        widget.biometricTrigger != oldWidget.biometricTrigger) {
+      _tryBiometric();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tryBiometric() async {
+    try {
+      final auth = LocalAuthentication();
+      final ok = await auth.authenticate(
+        localizedReason: 'Unlock My Bakery',
+      );
+      if (ok) widget.onUnlocked();
+    } catch (_) {
+      // Fall through to PIN entry.
+    }
+  }
+
+  Future<void> _submitPin() async {
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+    final ok = await widget.lockService.verifyPin(_pinController.text);
+    if (!mounted) return;
+    if (ok) {
+      widget.onUnlocked();
+    } else {
+      setState(() {
+        _checking = false;
+        _error = 'Incorrect PIN';
+        _pinController.clear();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lock, size: 48),
+                  const SizedBox(height: 16),
+                  Text('Enter PIN', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _pinController,
+                    autofocus: true,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      border: const OutlineInputBorder(),
+                      errorText: _error,
+                    ),
+                    onSubmitted: (_) => _submitPin(),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _checking ? null : _submitPin,
+                    child: const Text('Unlock'),
+                  ),
+                  if (widget.biometricEnabled) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _tryBiometric,
+                      icon: const Icon(Icons.fingerprint),
+                      label: const Text('Use biometrics'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

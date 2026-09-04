@@ -1,0 +1,3 @@
+no way to edit customer details
+separate personal stats
+bar graph (daily, weekly, monthly)

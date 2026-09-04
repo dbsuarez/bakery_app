@@ -1,0 +1,553 @@
+import '../models/batch.dart';
+import '../models/customer.dart';
+import '../models/product.dart';
+import '../models/sale.dart';
+import 'batch_calculations.dart';
+import 'customer_calculations.dart';
+
+class CustomerStat {
+  final Customer customer;
+  final double value;
+  const CustomerStat(this.customer, this.value);
+}
+
+class ProductStat {
+  final Product product;
+  final double value;
+  const ProductStat(this.product, this.value);
+}
+
+class WeekRevenue {
+  final DateTime weekStart;
+  final double revenue;
+  const WeekRevenue(this.weekStart, this.revenue);
+}
+
+class DayRevenue {
+  final DateTime day;
+  final double revenue;
+  const DayRevenue(this.day, this.revenue);
+}
+
+class MonthRevenue {
+  final DateTime monthStart;
+  final double revenue;
+  const MonthRevenue(this.monthStart, this.revenue);
+}
+
+class DashboardData {
+  // Money cards
+  final double outstandingReceivables;
+  final double frontedAmount;
+  final double unsoldValue;
+  final double personalUnsoldValue;
+  final double pendingRemittance;
+  final double thisWeekRevenue;
+  final double lastWeekRevenue;
+  final double thisMonthRevenue;
+  final double allTimeRevenue;
+  final double? thisMonthEstimatedProfit;
+  final double? allTimeEstimatedProfit;
+  final double averageOrderValue;
+  final double todayRevenue;
+  final double bestPriorDayRevenue;
+  final double bestPriorWeekRevenue;
+  final int salesStreak;
+
+  // Customer cards
+  final List<CustomerStat> mostLoyal;
+  final List<CustomerStat> topSpenders;
+  final List<CustomerStat> topUnpaidBalances;
+  final Customer? customerOfTheMonth;
+  final List<Customer> atRisk;
+
+  // Product cards
+  final List<ProductStat> bestSellerByUnits;
+  final List<ProductStat> bestSellerByRevenue;
+  final List<ProductStat> unsoldWatchlist;
+  final List<ProductStat> personalUnsoldWatchlist;
+
+  // Operations
+  final List<Batch> batchesAwaitingRemittance;
+  final List<Sale> recentPayments;
+  final List<Batch> recentBatches;
+  final List<Batch> activeBatches;
+  final List<Batch> personalActiveBatches;
+
+  // Personal - computed entirely from `Batch.isPersonal` batches, kept out
+  // of every business figure above (spec: personal batches never go through
+  // remittance and aren't part of the shop's business).
+  final int personalBatchCount;
+  final double personalTotalValueProduced;
+  final double? personalTotalCost;
+  final double? personalEstimatedProfit;
+  final int personalUnitsConsumed;
+  // A personal batch is never remitted, but a real (non-zero) customer_sale
+  // can still be recorded against one - e.g. a few pieces actually sold off
+  // a personal batch. Tracked separately since `businessSales` excludes
+  // every sale tied to a personal batch, real money or not.
+  final double personalOutstandingReceivables;
+  final double personalRevenue;
+  final double? personalThisMonthEstimatedProfit;
+
+  // Trend
+  final List<WeekRevenue> eightWeekTrend;
+  final List<DayRevenue> dailyTrend;
+  final List<MonthRevenue> monthlyTrend;
+
+  // Personal trend - value of personal batches *produced* in each period
+  // (by `Batch.batchDate`), not sales revenue, since personal batches
+  // normally carry no real sale amount.
+  final List<WeekRevenue> personalWeeklyTrend;
+  final List<DayRevenue> personalDailyTrend;
+  final List<MonthRevenue> personalMonthlyTrend;
+
+  const DashboardData({
+    required this.outstandingReceivables,
+    required this.frontedAmount,
+    required this.unsoldValue,
+    required this.personalUnsoldValue,
+    required this.pendingRemittance,
+    required this.thisWeekRevenue,
+    required this.lastWeekRevenue,
+    required this.thisMonthRevenue,
+    required this.allTimeRevenue,
+    required this.thisMonthEstimatedProfit,
+    required this.allTimeEstimatedProfit,
+    required this.averageOrderValue,
+    required this.todayRevenue,
+    required this.bestPriorDayRevenue,
+    required this.bestPriorWeekRevenue,
+    required this.salesStreak,
+    required this.mostLoyal,
+    required this.topSpenders,
+    required this.topUnpaidBalances,
+    required this.customerOfTheMonth,
+    required this.atRisk,
+    required this.bestSellerByUnits,
+    required this.bestSellerByRevenue,
+    required this.unsoldWatchlist,
+    required this.personalUnsoldWatchlist,
+    required this.batchesAwaitingRemittance,
+    required this.recentPayments,
+    required this.recentBatches,
+    required this.activeBatches,
+    required this.personalActiveBatches,
+    required this.personalBatchCount,
+    required this.personalTotalValueProduced,
+    required this.personalTotalCost,
+    required this.personalEstimatedProfit,
+    required this.personalUnitsConsumed,
+    required this.personalOutstandingReceivables,
+    required this.personalRevenue,
+    required this.personalThisMonthEstimatedProfit,
+    required this.eightWeekTrend,
+    required this.dailyTrend,
+    required this.monthlyTrend,
+    required this.personalWeeklyTrend,
+    required this.personalDailyTrend,
+    required this.personalMonthlyTrend,
+  });
+}
+
+DateTime _startOfWeek(DateTime d) {
+  final date = DateTime(d.year, d.month, d.day);
+  return date.subtract(Duration(days: date.weekday - 1));
+}
+
+DashboardData computeDashboard({
+  required List<Product> products,
+  required List<Customer> customers,
+  required List<Batch> batches,
+  required List<Sale> sales,
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final liveBatches = batches.where((b) => !b.isDeleted).toList();
+  final liveSales = sales.where((s) => !s.isDeleted).toList();
+  final liveProducts = products.where((p) => !p.isDeleted).toList();
+  final liveCustomers = normalCustomers(customers);
+
+  // Personal batches (produced for the owner's own use, never remitted)
+  // are kept out of every business-performance figure below - revenue,
+  // profit, best-sellers, and customer stats all describe the shop's
+  // business, not what the owner made for themselves.
+  final personalBatchIds =
+      liveBatches.where((b) => b.isPersonal).map((b) => b.id).toSet();
+  final businessSales =
+      liveSales.where((s) => !personalBatchIds.contains(s.batchId)).toList();
+
+  final outstandingReceivables = businessSales
+      .where((s) => !s.paid && s.saleType == SaleType.customerSale)
+      .fold(0.0, (sum, s) => sum + s.amount);
+
+  // Once a batch is remitted, its full value (paid + unpaid) has already
+  // gone out; any still-unpaid amount is money the owner personally
+  // fronted, not the shop till's receivable anymore.
+  final remittedBatchIds = liveBatches.where((b) => b.remitted).map((b) => b.id).toSet();
+  final frontedAmount = businessSales
+      .where((s) =>
+          !s.paid &&
+          s.saleType == SaleType.customerSale &&
+          remittedBatchIds.contains(s.batchId))
+      .fold(0.0, (sum, s) => sum + s.amount);
+
+  // Value of unsold inventory, tracked separately from receivables since
+  // it isn't money any customer owes (spec section 7 rule 6). Computed from
+  // remaining quantity on remitted or personal batches, not a placeholder
+  // sale row - remaining stock on a still-active, non-personal batch might
+  // yet sell. Kept as two separate totals (business vs. personal) since
+  // personal batches were never headed for the shop till in the first place.
+  double unsoldValueFor(bool personal) => liveBatches
+      .where((b) => b.isPersonal == personal && (b.remitted || b.isPersonal))
+      .fold(
+        0.0,
+        (sum, b) =>
+            sum + remainingQuantity(b, liveSales).clamp(0, 1 << 30) * b.unitPrice,
+      );
+  final unsoldValue = unsoldValueFor(false);
+  final personalUnsoldValue = unsoldValueFor(true);
+
+  final pendingRemittance = liveBatches
+      .where((b) => !b.remitted && !b.isPersonal)
+      .fold(0.0, (sum, b) => sum + batchRevenue(b.id, liveSales));
+
+  final thisWeekStart = _startOfWeek(today);
+  final lastWeekStart = thisWeekStart.subtract(const Duration(days: 7));
+
+  double revenueInWeek(DateTime weekStart) {
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    return businessSales
+        .where((s) =>
+            !s.saleDate.isBefore(weekStart) && s.saleDate.isBefore(weekEnd))
+        .fold(0.0, (sum, s) => sum + s.amount);
+  }
+
+  final thisWeekRevenue = revenueInWeek(thisWeekStart);
+  final lastWeekRevenue = revenueInWeek(lastWeekStart);
+
+  // Personal-best detection (for "meaningful confetti", spec section 12)
+  // and the sales streak - both look at per-day revenue/activity, so build
+  // one day->revenue map and one day->has-a-sale set from businessSales.
+  final todayKey = DateTime(today.year, today.month, today.day);
+  final dailyRevenue = <DateTime, double>{};
+  for (final s in businessSales) {
+    final day = DateTime(s.saleDate.year, s.saleDate.month, s.saleDate.day);
+    dailyRevenue[day] = (dailyRevenue[day] ?? 0) + s.amount;
+  }
+  final todayRevenue = dailyRevenue[todayKey] ?? 0.0;
+  final bestPriorDayRevenue = dailyRevenue.entries
+      .where((e) => e.key.isBefore(todayKey))
+      .fold(0.0, (m, e) => e.value > m ? e.value : m);
+
+  final weeklyRevenue = <DateTime, double>{};
+  for (final s in businessSales) {
+    final weekStart = _startOfWeek(s.saleDate);
+    weeklyRevenue[weekStart] = (weeklyRevenue[weekStart] ?? 0) + s.amount;
+  }
+  final bestPriorWeekRevenue = weeklyRevenue.entries
+      .where((e) => e.key.isBefore(thisWeekStart))
+      .fold(0.0, (m, e) => e.value > m ? e.value : m);
+
+  // Consecutive days with at least one sale, Duolingo-style: today doesn't
+  // break the streak until the day is actually over - if nothing's been
+  // sold yet today, count from yesterday instead of zeroing out at 12:01am.
+  final saleDays = dailyRevenue.keys.toSet();
+  var streakDay = todayKey;
+  if (!saleDays.contains(streakDay)) {
+    streakDay = streakDay.subtract(const Duration(days: 1));
+  }
+  var salesStreak = 0;
+  while (saleDays.contains(streakDay)) {
+    salesStreak++;
+    streakDay = streakDay.subtract(const Duration(days: 1));
+  }
+
+  final monthStart = DateTime(today.year, today.month, 1);
+  final monthBatches = liveBatches
+      .where((b) => !b.batchDate.isBefore(monthStart) && !b.isPersonal);
+  final hasCostData = monthBatches.any((b) => b.unitCost > 0);
+  final thisMonthEstimatedProfit = hasCostData
+      ? monthBatches.fold<double>(0.0, (sum, b) => sum + b.estimatedProfit)
+      : null;
+
+  final thisMonthRevenue = businessSales
+      .where((s) => !s.saleDate.isBefore(monthStart))
+      .fold(0.0, (sum, s) => sum + s.amount);
+
+  final allTimeRevenue =
+      businessSales.fold(0.0, (sum, s) => sum + s.amount);
+
+  final businessBatches = liveBatches.where((b) => !b.isPersonal);
+  final hasAnyCostData = businessBatches.any((b) => b.unitCost > 0);
+  final allTimeEstimatedProfit = hasAnyCostData
+      ? businessBatches.fold<double>(0.0, (sum, b) => sum + b.estimatedProfit)
+      : null;
+
+  final customerSales =
+      businessSales.where((s) => s.saleType == SaleType.customerSale);
+  final customerSaleCount = customerSales.length;
+  final averageOrderValue = customerSaleCount == 0
+      ? 0.0
+      : customerSales.fold(0.0, (sum, s) => sum + s.amount) /
+          customerSaleCount;
+
+  final loyalStats = liveCustomers
+      .map((c) =>
+          CustomerStat(c, customerOrderCount(c.id, businessSales).toDouble()))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final spenderStats = liveCustomers
+      .map((c) => CustomerStat(c, customerTotalSpent(c.id, businessSales)))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final unpaidStats = liveCustomers
+      .map((c) => CustomerStat(c, customerBalance(c.id, businessSales)))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final customerOfTheMonth = spenderStats.isNotEmpty
+      ? spenderStats.first.customer
+      : null;
+
+  final atRisk = atRiskCustomers(liveCustomers, businessSales, now: today);
+
+  double unitsForProduct(int productId) {
+    final batchIds = liveBatches
+        .where((b) => b.productId == productId && !b.isPersonal)
+        .map((b) => b.id);
+    return businessSales
+        .where((s) =>
+            batchIds.contains(s.batchId) &&
+            s.saleType == SaleType.customerSale)
+        .fold(0.0, (sum, s) => sum + s.quantity);
+  }
+
+  double revenueForProduct(int productId) {
+    final batchIds = liveBatches
+        .where((b) => b.productId == productId && !b.isPersonal)
+        .map((b) => b.id);
+    return businessSales
+        .where((s) => batchIds.contains(s.batchId))
+        .fold(0.0, (sum, s) => sum + s.amount);
+  }
+
+  // Unsold inventory is "final" once a batch is remitted (the baking cycle
+  // is closed) or is personal (it never goes through remittance at all);
+  // an active, non-personal batch's remaining stock might still sell. Split
+  // by personal vs. business so the watchlist doesn't mix the two.
+  int unsoldForProduct(int productId, {required bool personal}) {
+    final productBatches = liveBatches
+        .where((b) =>
+            b.productId == productId &&
+            b.isPersonal == personal &&
+            (b.remitted || b.isPersonal))
+        .toList();
+    return productBatches.fold<int>(
+      0,
+      (sum, b) => sum + remainingQuantity(b, liveSales).clamp(0, 1 << 30),
+    );
+  }
+
+  final bestSellerByUnits = liveProducts
+      .map((p) => ProductStat(p, unitsForProduct(p.id)))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final bestSellerByRevenue = liveProducts
+      .map((p) => ProductStat(p, revenueForProduct(p.id)))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final unsoldWatchlist = liveProducts
+      .map((p) =>
+          ProductStat(p, unsoldForProduct(p.id, personal: false).toDouble()))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final personalUnsoldWatchlist = liveProducts
+      .map((p) =>
+          ProductStat(p, unsoldForProduct(p.id, personal: true).toDouble()))
+      .where((s) => s.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final batchesAwaitingRemittance =
+      liveBatches.where((b) => !b.remitted && !b.isPersonal).toList()
+        ..sort((a, b) => a.batchDate.compareTo(b.batchDate));
+
+  final recentPayments = liveSales.where((s) => s.paid && s.datePaid != null)
+      .toList()
+    ..sort((a, b) => b.datePaid!.compareTo(a.datePaid!));
+
+  final recentBatches = [...liveBatches]
+    ..sort((a, b) => b.batchDate.compareTo(a.batchDate));
+
+  final activeBatches = liveBatches
+      .where((b) =>
+          !b.remitted && !b.isPersonal && remainingQuantity(b, liveSales) > 0)
+      .toList();
+
+  final personalActiveBatches = liveBatches
+      .where((b) => b.isPersonal && remainingQuantity(b, liveSales) > 0)
+      .toList();
+
+  final personalBatches = liveBatches.where((b) => b.isPersonal).toList();
+  final personalBatchCount = personalBatches.length;
+  final personalTotalValueProduced =
+      personalBatches.fold(0.0, (sum, b) => sum + b.totalValue);
+  final personalHasCostData = personalBatches.any((b) => b.unitCost > 0);
+  final personalTotalCost = personalHasCostData
+      ? personalBatches.fold<double>(
+          0.0, (sum, b) => sum + (b.countProduced * b.unitCost))
+      : null;
+  final personalEstimatedProfit = personalTotalCost == null
+      ? null
+      : personalTotalValueProduced - personalTotalCost;
+  final personalBatchIdSet = personalBatches.map((b) => b.id).toSet();
+  final personalUnitsConsumed = liveSales
+      .where((s) => personalBatchIdSet.contains(s.batchId))
+      .fold<int>(0, (sum, s) => sum + s.quantity);
+  final personalOutstandingReceivables = liveSales
+      .where((s) =>
+          personalBatchIdSet.contains(s.batchId) &&
+          !s.paid &&
+          s.saleType == SaleType.customerSale)
+      .fold(0.0, (sum, s) => sum + s.amount);
+  final personalRevenue = liveSales
+      .where((s) =>
+          personalBatchIdSet.contains(s.batchId) &&
+          s.saleType == SaleType.customerSale)
+      .fold(0.0, (sum, s) => sum + s.amount);
+  final personalMonthBatches = personalBatches
+      .where((b) => !b.batchDate.isBefore(monthStart));
+  final personalHasMonthCostData =
+      personalMonthBatches.any((b) => b.unitCost > 0);
+  final personalThisMonthEstimatedProfit = personalHasMonthCostData
+      ? personalMonthBatches.fold<double>(
+          0.0, (sum, b) => sum + b.estimatedProfit)
+      : null;
+
+  final eightWeekTrend = List.generate(8, (i) {
+    final weekStart =
+        thisWeekStart.subtract(Duration(days: 7 * (7 - i)));
+    return WeekRevenue(weekStart, revenueInWeek(weekStart));
+  });
+
+  final dailyTrend = List.generate(14, (i) {
+    final day = todayKey.subtract(Duration(days: 13 - i));
+    return DayRevenue(day, dailyRevenue[day] ?? 0.0);
+  });
+
+  double revenueInMonth(DateTime monthStart) {
+    final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
+    return businessSales
+        .where((s) =>
+            !s.saleDate.isBefore(monthStart) && s.saleDate.isBefore(monthEnd))
+        .fold(0.0, (sum, s) => sum + s.amount);
+  }
+
+  final monthlyTrend = List.generate(6, (i) {
+    final offset = 5 - i;
+    final monthStart2 =
+        DateTime(today.year, today.month - offset, 1);
+    return MonthRevenue(monthStart2, revenueInMonth(monthStart2));
+  });
+
+  // Personal trend uses batch production date/value, not sales revenue -
+  // personal batches normally carry no real sale amount to trend on.
+  double personalValueOnDay(DateTime day) => personalBatches
+      .where((b) =>
+          b.batchDate.year == day.year &&
+          b.batchDate.month == day.month &&
+          b.batchDate.day == day.day)
+      .fold(0.0, (sum, b) => sum + b.totalValue);
+
+  double personalValueInWeek(DateTime weekStart) {
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    return personalBatches
+        .where((b) =>
+            !b.batchDate.isBefore(weekStart) && b.batchDate.isBefore(weekEnd))
+        .fold(0.0, (sum, b) => sum + b.totalValue);
+  }
+
+  double personalValueInMonth(DateTime monthStart) {
+    final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
+    return personalBatches
+        .where((b) =>
+            !b.batchDate.isBefore(monthStart) &&
+            b.batchDate.isBefore(monthEnd))
+        .fold(0.0, (sum, b) => sum + b.totalValue);
+  }
+
+  final personalDailyTrend = List.generate(14, (i) {
+    final day = todayKey.subtract(Duration(days: 13 - i));
+    return DayRevenue(day, personalValueOnDay(day));
+  });
+
+  final personalWeeklyTrend = List.generate(8, (i) {
+    final weekStart = thisWeekStart.subtract(Duration(days: 7 * (7 - i)));
+    return WeekRevenue(weekStart, personalValueInWeek(weekStart));
+  });
+
+  final personalMonthlyTrend = List.generate(6, (i) {
+    final offset = 5 - i;
+    final monthStart2 = DateTime(today.year, today.month - offset, 1);
+    return MonthRevenue(monthStart2, personalValueInMonth(monthStart2));
+  });
+
+  return DashboardData(
+    outstandingReceivables: outstandingReceivables,
+    frontedAmount: frontedAmount,
+    unsoldValue: unsoldValue,
+    personalUnsoldValue: personalUnsoldValue,
+    pendingRemittance: pendingRemittance,
+    thisWeekRevenue: thisWeekRevenue,
+    lastWeekRevenue: lastWeekRevenue,
+    thisMonthRevenue: thisMonthRevenue,
+    allTimeRevenue: allTimeRevenue,
+    thisMonthEstimatedProfit: thisMonthEstimatedProfit,
+    allTimeEstimatedProfit: allTimeEstimatedProfit,
+    averageOrderValue: averageOrderValue,
+    todayRevenue: todayRevenue,
+    bestPriorDayRevenue: bestPriorDayRevenue,
+    bestPriorWeekRevenue: bestPriorWeekRevenue,
+    salesStreak: salesStreak,
+    mostLoyal: loyalStats.take(5).toList(),
+    topSpenders: spenderStats.take(5).toList(),
+    topUnpaidBalances: unpaidStats.take(5).toList(),
+    customerOfTheMonth: customerOfTheMonth,
+    atRisk: atRisk,
+    bestSellerByUnits: bestSellerByUnits.take(5).toList(),
+    bestSellerByRevenue: bestSellerByRevenue.take(5).toList(),
+    unsoldWatchlist: unsoldWatchlist.take(5).toList(),
+    personalUnsoldWatchlist: personalUnsoldWatchlist.take(5).toList(),
+    batchesAwaitingRemittance: batchesAwaitingRemittance,
+    recentPayments: recentPayments.take(10).toList(),
+    recentBatches: recentBatches.take(10).toList(),
+    activeBatches: activeBatches,
+    personalActiveBatches: personalActiveBatches,
+    personalBatchCount: personalBatchCount,
+    personalTotalValueProduced: personalTotalValueProduced,
+    personalTotalCost: personalTotalCost,
+    personalEstimatedProfit: personalEstimatedProfit,
+    personalUnitsConsumed: personalUnitsConsumed,
+    personalOutstandingReceivables: personalOutstandingReceivables,
+    personalRevenue: personalRevenue,
+    personalThisMonthEstimatedProfit: personalThisMonthEstimatedProfit,
+    eightWeekTrend: eightWeekTrend,
+    dailyTrend: dailyTrend,
+    monthlyTrend: monthlyTrend,
+    personalWeeklyTrend: personalWeeklyTrend,
+    personalDailyTrend: personalDailyTrend,
+    personalMonthlyTrend: personalMonthlyTrend,
+  );
+}

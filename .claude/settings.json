@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter create *)",
+      "Bash(flutter pub *)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/**)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/drift_flutter-0.3.1/lib/**)",
+      "Bash(dart run *)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/sqlite3-3.5.2/**)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/sqlite3-3.4.0/**)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/sqlite3-2.9.0/**)",
+      "Bash(dart pub *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -)",
+      "Bash(find \"C:/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev\" -maxdepth 1 -iname \"objective_c-*\" 2>/dev/null)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/build_runner-2.15.1/**)",
+      "Bash(grep -rl \"compile\" \"C:/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/build_runner-2.15.1/lib/src/bootstrap/\" 2>/dev/null)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/build_runner-2.15.1/lib/src/bootstrap/**)",
+      "Read(//c/Users/cha0s/AppData/Local/Pub/Cache/hosted/pub.dev/build_runner-2.15.1/lib/**)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter devices *)",
+      "Bash(timeout 90 flutter run -d windows --release)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(flutter build *)",
+      "Bash(taskkill //IM bakery_app.exe //F)",
+      "Bash(tasklist //FI \"IMAGENAME eq bakery_app.exe\")"
+    ]
+  }
+}

@@ -1,0 +1,58 @@
+import '../models/batch.dart';
+import '../models/customer.dart';
+import '../models/customer_favorite.dart';
+import '../models/loyalty_adjustment.dart';
+import '../models/product.dart';
+import '../models/sale.dart';
+
+abstract class BakeryRepository {
+  Stream<List<Product>> watchProducts();
+  Stream<List<Customer>> watchCustomers();
+  Stream<List<Batch>> watchBatches();
+  Stream<List<Sale>> watchSales();
+  Stream<List<LoyaltyAdjustment>> watchLoyaltyAdjustments();
+  Stream<List<CustomerFavorite>> watchCustomerFavorites();
+
+  Future<void> createProduct(Product product);
+  Future<void> createCustomer(Customer customer);
+  Future<void> createBatch(Batch batch);
+  Future<void> addSingleSale(Sale sale);
+  Future<void> addBatchTransactions(
+    int batchId,
+    List<BatchTransactionEntry> entries,
+  );
+  Future<void> markSalePaid(int saleId, DateTime paymentDate);
+  Future<void> markSaleUnpaid(int saleId);
+  Future<void> markBatchRemitted(int batchId, DateTime dateRemitted);
+  Future<void> unlockBatch(int batchId);
+
+  /// Re-locks a batch that was previously unlocked, without touching
+  /// `remitted`/`date_remitted` - the counterpart to [unlockBatch].
+  Future<void> lockBatch(int batchId);
+
+  // Additions beyond the spec's core interface, needed for edit/detail
+  // screens (spec section 11 lists Batches/Customers/Products edit flows).
+  Future<void> updateProduct(Product product);
+  Future<void> updateCustomer(Customer customer);
+  Future<void> updateBatch(Batch batch);
+  Future<void> updateSale(Sale sale);
+  Future<void> revertBatchRemittance(int batchId);
+
+  /// Soft-deletes a transaction entirely - not the same as editing it to
+  /// zero: this fully undoes it, freeing its quantity back to the batch's
+  /// available stock (`remainingQuantity` already excludes deleted sales).
+  Future<void> deleteSale(int saleId);
+
+  /// Records a manual loyalty-points correction (goodwill credit, error
+  /// fix) - not tied to a real purchase, so it can't be a `Sale` row.
+  Future<void> addLoyaltyAdjustment(LoyaltyAdjustment adjustment);
+
+  /// Moves every sale and loyalty adjustment from [fromCustomerId] onto
+  /// [intoCustomerId], then soft-deletes [fromCustomerId] - for merging an
+  /// accidental duplicate customer record into the real one. Irreversible
+  /// from the app (the merged-away customer is soft-deleted, not restored).
+  Future<void> mergeCustomers(int fromCustomerId, int intoCustomerId);
+
+  Future<void> addCustomerFavorite(int customerId, int productId);
+  Future<void> removeCustomerFavorite(int customerId, int productId);
+}
