@@ -139,36 +139,42 @@ Future<Uint8List> buildUnpaidReportPdf(
             ),
           )
         else ...[
-          for (final customerId in customerIds) ...[
-            pw.Text(
-              state.customerById(customerId)?.name ?? 'Unknown customer',
-              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+          pw.Table(
+            border: const pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: PdfColors.grey300),
             ),
-            pw.SizedBox(height: 6),
-            pw.Table(
-              border: const pw.TableBorder(
-                horizontalInside: pw.BorderSide(color: PdfColors.grey300),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(2),
+              1: pw.FlexColumnWidth(3),
+              2: pw.FlexColumnWidth(1.6),
+              3: pw.FlexColumnWidth(1),
+              4: pw.FlexColumnWidth(1.8),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: brand),
+                children: [
+                  _cell('Date', bold: true),
+                  _cell('Item', bold: true),
+                  _cell('Unit price', bold: true, align: pw.TextAlign.right),
+                  _cell('Qty', bold: true, align: pw.TextAlign.right),
+                  _cell('Amount', bold: true, align: pw.TextAlign.right),
+                ].map((w) => pw.DefaultTextStyle(
+                      style: const pw.TextStyle(color: PdfColors.white),
+                      child: w,
+                    )).toList(),
               ),
-              columnWidths: const {
-                0: pw.FlexColumnWidth(2),
-                1: pw.FlexColumnWidth(3),
-                2: pw.FlexColumnWidth(1.6),
-                3: pw.FlexColumnWidth(1),
-                4: pw.FlexColumnWidth(1.8),
-              },
-              children: [
+              for (final customerId in customerIds) ...[
                 pw.TableRow(
-                  decoration: pw.BoxDecoration(color: brand),
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
-                    _cell('Date', bold: true),
-                    _cell('Item', bold: true),
-                    _cell('Unit price', bold: true, align: pw.TextAlign.right),
-                    _cell('Qty', bold: true, align: pw.TextAlign.right),
-                    _cell('Amount', bold: true, align: pw.TextAlign.right),
-                  ].map((w) => pw.DefaultTextStyle(
-                        style: const pw.TextStyle(color: PdfColors.white),
-                        child: w,
-                      )).toList(),
+                    _cell(state.customerById(customerId)?.name ?? 'Unknown customer',
+                        bold: true),
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                  ],
                 ),
                 for (final s in byCustomer[customerId]!
                   ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
@@ -184,20 +190,23 @@ Future<Uint8List> buildUnpaidReportPdf(
                     _cell('${s.quantity}', align: pw.TextAlign.right),
                     _cell(_currency.format(s.amount), align: pw.TextAlign.right),
                   ]),
+                if (byCustomer[customerId]!.length > 1)
+                  pw.TableRow(children: [
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                    _cell('Subtotal', bold: true, align: pw.TextAlign.right),
+                    _cell(
+                      _currency.format(byCustomer[customerId]!
+                          .fold<double>(0, (sum, s) => sum + s.amount)),
+                      bold: true,
+                      align: pw.TextAlign.right,
+                    ),
+                  ]),
               ],
-            ),
-            pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Padding(
-                padding: const pw.EdgeInsets.only(top: 4),
-                child: pw.Text(
-                  'Subtotal: ${_currency.format(byCustomer[customerId]!.fold<double>(0, (sum, s) => sum + s.amount))}',
-                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-            ),
-            pw.SizedBox(height: 16),
-          ],
+            ],
+          ),
+          pw.SizedBox(height: 16),
           pw.Divider(color: brand, thickness: 1.5),
           pw.Container(
             alignment: pw.Alignment.centerRight,

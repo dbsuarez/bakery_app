@@ -50,6 +50,8 @@ dart_define.json
 # Local Netlify folder
 .netlify
 
-# Real customer/sales data exported via Backup/Export Report - never commit
+# Real customer/sales data exported via Backup/Export Report/Unpaid Report -
+# never commit
 docs/bakery_backup_*.json
 docs/sales_report_*.csv
+docs/unpaid_report_*.pdf
