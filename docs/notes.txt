@@ -1,3 +1,6 @@
 no way to edit customer details
 separate personal stats
 bar graph (daily, weekly, monthly)
+
+in customers screen, beside the payment log, i want an unpaid report, basically like the per customer pdf with qr code for payment,
+in the unpaid report, I can select from the customer list who will be in that report..
