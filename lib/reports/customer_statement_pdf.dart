@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../analytics/customer_calculations.dart';
 import '../app_state.dart';
 import '../models/customer.dart';
 import '../models/sale.dart';
@@ -62,7 +63,8 @@ pw.Page _buildStatementPage({
           s.saleType == SaleType.customerSale)
       .toList()
     ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
-  final total = unpaid.fold<double>(0, (sum, s) => sum + s.amount);
+  double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
+  final total = unpaid.fold<double>(0, (sum, s) => sum + remainingFor(s));
 
   return pw.Page(
     pageFormat: PdfPageFormat.a4,
@@ -149,7 +151,11 @@ pw.Page _buildStatementPage({
               for (final s in unpaid)
                 pw.TableRow(children: [
                   _cell(appDateFormat.format(s.saleDate)),
-                  _cell(_productTitleFor(state, s)),
+                  _cell(
+                    salePaidAmount(s.id, state.salePayments) > 0
+                        ? '${_productTitleFor(state, s)} (${_currency.format(salePaidAmount(s.id, state.salePayments))} paid)'
+                        : _productTitleFor(state, s),
+                  ),
                   _cell(
                     _unitPriceFor(state, s) == null
                         ? ''
@@ -157,7 +163,8 @@ pw.Page _buildStatementPage({
                     align: pw.TextAlign.right,
                   ),
                   _cell('${s.quantity}', align: pw.TextAlign.right),
-                  _cell(_currency.format(s.amount), align: pw.TextAlign.right),
+                  _cell(_currency.format(remainingFor(s)),
+                      align: pw.TextAlign.right),
                 ]),
             ],
           ),
@@ -259,7 +266,11 @@ Future<Uint8List> buildCustomerStatementPdf(
 /// A combined "chase list" PDF - one statement page per customer in
 /// [customers], same layout (and QR code) as the single-customer statement -
 /// for printing/sharing an unpaid report covering several customers at once.
-Future<Uint8List> buildBulkUnpaidStatementsPdf(
+/// A single unified table (same layout as the internal Unpaid Report),
+/// restricted to [customers], with a QR code at the bottom for payment -
+/// meant to be shared with the customers themselves (a household statement),
+/// unlike the internal report which is for the owner's own collections list.
+Future<Uint8List> buildUnpaidStatementReportPdf(
   AppState state,
   List<Customer> customers, {
   required String businessName,
@@ -268,23 +279,208 @@ Future<Uint8List> buildBulkUnpaidStatementsPdf(
   final brand = brandColor ?? _defaultBrandColor;
   final now = DateTime.now();
 
+  final customerIds = customers.map((c) => c.id).toSet();
+  final unpaidSales = state.sales
+      .where((s) =>
+          customerIds.contains(s.customerId) &&
+          !s.isDeleted &&
+          !s.paid &&
+          s.saleType == SaleType.customerSale)
+      .toList();
+
+  final byCustomer = <int, List<Sale>>{};
+  for (final s in unpaidSales) {
+    byCustomer.putIfAbsent(s.customerId, () => []).add(s);
+  }
+  final sortedCustomerIds = byCustomer.keys.toList()
+    ..sort((a, b) {
+      final nameA = state.customerById(a)?.name ?? '';
+      final nameB = state.customerById(b)?.name ?? '';
+      return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+    });
+
+  double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
+  final grandTotal =
+      unpaidSales.fold<double>(0, (sum, s) => sum + remainingFor(s));
+
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
-  final qrImage = await _loadQrImage();
+  final qrImage = unpaidSales.isEmpty ? null : await _loadQrImage();
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
   );
-  for (final customer in customers) {
-    doc.addPage(_buildStatementPage(
-      state: state,
-      customer: customer,
-      businessName: businessName,
-      brand: brand,
-      qrImage: qrImage,
-      now: now,
-    ));
-  }
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(32),
+      header: (context) => context.pageNumber == 1
+          ? pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          businessName,
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                            color: brand,
+                          ),
+                        ),
+                        pw.Text(
+                          'Statement of Account',
+                          style: const pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    pw.Text(
+                      appDateTimeFormat.format(now),
+                      style: const pw.TextStyle(
+                          fontSize: 9, color: PdfColors.grey600),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 4),
+                pw.Divider(color: brand, thickness: 1.5),
+                pw.SizedBox(height: 16),
+              ],
+            )
+          : pw.SizedBox.shrink(),
+      footer: (context) => pw.Align(
+        alignment: pw.Alignment.centerRight,
+        child: pw.Text(
+          '${context.pageNumber} / ${context.pagesCount}',
+          style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+        ),
+      ),
+      build: (context) => [
+        if (unpaidSales.isEmpty)
+          pw.Container(
+            padding: const pw.EdgeInsets.all(16),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.green50,
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Text(
+              'No outstanding balance - you\'re all paid up. Thank you!',
+              style: const pw.TextStyle(fontSize: 12),
+            ),
+          )
+        else ...[
+          pw.Table(
+            border: const pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: PdfColors.grey300),
+            ),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(2),
+              1: pw.FlexColumnWidth(3),
+              2: pw.FlexColumnWidth(1.6),
+              3: pw.FlexColumnWidth(1),
+              4: pw.FlexColumnWidth(1.8),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: brand),
+                children: [
+                  _cell('Date', bold: true),
+                  _cell('Item', bold: true),
+                  _cell('Unit price', bold: true, align: pw.TextAlign.right),
+                  _cell('Qty', bold: true, align: pw.TextAlign.right),
+                  _cell('Amount', bold: true, align: pw.TextAlign.right),
+                ].map((w) => pw.DefaultTextStyle(
+                      style: const pw.TextStyle(color: PdfColors.white),
+                      child: w,
+                    )).toList(),
+              ),
+              for (final customerId in sortedCustomerIds) ...[
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    _cell(state.customerById(customerId)?.name ?? 'Unknown customer',
+                        bold: true),
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                  ],
+                ),
+                for (final s in byCustomer[customerId]!
+                  ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
+                  pw.TableRow(children: [
+                    _cell(appDateFormat.format(s.saleDate)),
+                    _cell(_productTitleFor(state, s)),
+                    _cell(
+                      _unitPriceFor(state, s) == null
+                          ? ''
+                          : _currency.format(_unitPriceFor(state, s)),
+                      align: pw.TextAlign.right,
+                    ),
+                    _cell('${s.quantity}', align: pw.TextAlign.right),
+                    _cell(_currency.format(remainingFor(s)),
+                        align: pw.TextAlign.right),
+                  ]),
+                if (byCustomer[customerId]!.length > 1)
+                  pw.TableRow(children: [
+                    _cell(''),
+                    _cell(''),
+                    _cell(''),
+                    _cell('Subtotal', bold: true, align: pw.TextAlign.right),
+                    _cell(
+                      _currency.format(byCustomer[customerId]!
+                          .fold<double>(0, (sum, s) => sum + remainingFor(s))),
+                      bold: true,
+                      align: pw.TextAlign.right,
+                    ),
+                  ]),
+              ],
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pw.Divider(color: brand, thickness: 1.5),
+          pw.Container(
+            alignment: pw.Alignment.centerRight,
+            padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Text(
+              'Grand Total Due: ${_currency.format(grandTotal)}',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+          if (qrImage != null) ...[
+            pw.SizedBox(height: 20),
+            pw.Center(
+              child: pw.Column(
+                children: [
+                  pw.Text(
+                    'Scan to pay',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: brand,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Image(qrImage, width: 160),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ],
+    ),
+  );
 
   return doc.save();
 }
@@ -329,16 +525,16 @@ Future<void> shareCustomerStatement(
   );
 }
 
-/// Shares a combined statement (one page per customer, e.g. a household
-/// buying together) as a single PDF - saves re-sharing the same message to
-/// each person individually.
+/// Shares a combined statement (one unified table covering every selected
+/// customer, e.g. a household buying together) as a single PDF - saves
+/// re-sharing the same message to each person individually.
 Future<void> shareBulkUnpaidStatements(
   AppState state,
   List<Customer> customers, {
   required String businessName,
   PdfColor? brandColor,
 }) async {
-  final bytes = await buildBulkUnpaidStatementsPdf(
+  final bytes = await buildUnpaidStatementReportPdf(
     state,
     customers,
     businessName: businessName,

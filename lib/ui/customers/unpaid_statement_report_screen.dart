@@ -12,6 +12,10 @@ import '../../theme/theme_controller.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
+/// Sentinel for the group filter meaning "no group assigned" - distinct
+/// from `null`, which means "no filter, show every group".
+const _ungroupedFilterValue = ' ungrouped';
+
 /// Pick which customers (e.g. a household buying together) go into one
 /// combined statement PDF - same per-customer layout and QR code as sharing
 /// a single customer's statement, just bundled into one export.
@@ -26,6 +30,7 @@ class UnpaidStatementReportScreen extends StatefulWidget {
 class _UnpaidStatementReportScreenState
     extends State<UnpaidStatementReportScreen> {
   String _search = '';
+  String? _groupFilter;
   Set<int>? _selected;
   bool _exporting = false;
   final _searchController = TextEditingController();
@@ -39,12 +44,13 @@ class _UnpaidStatementReportScreenState
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final business = context.watch<BusinessSettingsController>();
 
     final withBalance = appState.customers
         .where((c) =>
             !c.isArchived &&
             !c.isPseudoCustomer &&
-            customerBalance(c.id, appState.sales) > 0)
+            customerBalance(c.id, appState.sales, appState.salePayments) > 0)
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
@@ -53,13 +59,20 @@ class _UnpaidStatementReportScreenState
 
     final visible = withBalance
         .where((c) => c.name.toLowerCase().contains(_search.toLowerCase()))
+        .where((c) => switch (_groupFilter) {
+              null => true,
+              _ungroupedFilterValue => c.group == null,
+              final g => c.group == g,
+            })
         .toList();
 
     final selectedCustomers = withBalance
         .where((c) => _selected!.contains(c.id))
         .toList();
     final total = selectedCustomers.fold<double>(
-        0, (sum, c) => sum + customerBalance(c.id, appState.sales));
+        0,
+        (sum, c) =>
+            sum + customerBalance(c.id, appState.sales, appState.salePayments));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Statement Report')),
@@ -89,6 +102,48 @@ class _UnpaidStatementReportScreenState
                     onChanged: (v) => setState(() => _search = v),
                   ),
                 ),
+                if (business.customerGroups.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: SizedBox(
+                      height: 36,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: const Text('All groups'),
+                              selected: _groupFilter == null,
+                              onSelected: (_) =>
+                                  setState(() => _groupFilter = null),
+                            ),
+                          ),
+                          for (final g in business.customerGroups)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: FilterChip(
+                                label: Text(g),
+                                selected: _groupFilter == g,
+                                onSelected: (_) => setState(() =>
+                                    _groupFilter = _groupFilter == g ? null : g),
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: const Text('Ungrouped'),
+                              selected: _groupFilter == _ungroupedFilterValue,
+                              onSelected: (_) => setState(() => _groupFilter =
+                                  _groupFilter == _ungroupedFilterValue
+                                      ? null
+                                      : _ungroupedFilterValue),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
@@ -114,7 +169,8 @@ class _UnpaidStatementReportScreenState
                     itemCount: visible.length,
                     itemBuilder: (context, index) {
                       final customer = visible[index];
-                      final balance = customerBalance(customer.id, appState.sales);
+                      final balance = customerBalance(
+                          customer.id, appState.sales, appState.salePayments);
                       return CheckboxListTile(
                         value: _selected!.contains(customer.id),
                         onChanged: (v) => setState(() {

@@ -148,7 +148,8 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
                         title: Text(customer?.name ?? 'Unknown customer'),
                         subtitle: Text(
                           '${product?.title ?? ''} × ${sale.quantity} · '
-                          'Paid ${appDateFormat.format(sale.datePaid!)}',
+                          'Paid ${appDateFormat.format(sale.datePaid!)}'
+                          '${sale.paymentMethod != null ? ' via ${sale.paymentMethod}' : ''}',
                         ),
                         trailing: Text(_currency.format(sale.amount)),
                         onTap: customer == null

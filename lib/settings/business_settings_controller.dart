@@ -15,8 +15,10 @@ class BusinessSettingsController extends ChangeNotifier {
   static const _kRedeemPesosPerPointKey = 'redeem_pesos_per_point';
   static const _kSameDayBonusStartDateKey = 'same_day_bonus_start_date';
   static const _kCustomerGroupsKey = 'customer_groups';
+  static const _kPaymentMethodsKey = 'payment_methods';
 
   static const defaultName = 'My Bakery';
+  static const defaultPaymentMethods = ['Cash', 'AUB', 'Maribank', 'GCash'];
   static const defaultPesosPerPoint = 10.0; // ₱10 spent = 1 point earned
   static const defaultSameDayBonusPercent = 50.0;
   static const defaultRedeemPesosPerPoint = 1.0; // 1 point = ₱1 when redeeming
@@ -31,6 +33,7 @@ class BusinessSettingsController extends ChangeNotifier {
   double _redeemPesosPerPoint = defaultRedeemPesosPerPoint;
   DateTime _sameDayBonusStartDate = defaultSameDayBonusStartDate;
   List<String> _customerGroups = [];
+  List<String> _paymentMethods = List.of(defaultPaymentMethods);
 
   String get name => _name;
   double get pesosPerPoint => _pesosPerPoint;
@@ -38,6 +41,7 @@ class BusinessSettingsController extends ChangeNotifier {
   double get redeemPesosPerPoint => _redeemPesosPerPoint;
   DateTime get sameDayBonusStartDate => _sameDayBonusStartDate;
   List<String> get customerGroups => List.unmodifiable(_customerGroups);
+  List<String> get paymentMethods => List.unmodifiable(_paymentMethods);
 
   StreamSubscription<AuthState>? _authSub;
 
@@ -63,6 +67,7 @@ class BusinessSettingsController extends ChangeNotifier {
       final redeemPppVal = meta?[_kRedeemPesosPerPointKey];
       final bonusStartVal = meta?[_kSameDayBonusStartDateKey];
       final customerGroupsVal = meta?[_kCustomerGroupsKey];
+      final paymentMethodsVal = meta?[_kPaymentMethodsKey];
       final resolvedName =
           (nameVal is String && nameVal.trim().isNotEmpty) ? nameVal : defaultName;
       final resolvedPpp =
@@ -79,18 +84,23 @@ class BusinessSettingsController extends ChangeNotifier {
       final resolvedCustomerGroups = customerGroupsVal is List
           ? customerGroupsVal.whereType<String>().toList()
           : <String>[];
+      final resolvedPaymentMethods = paymentMethodsVal is List
+          ? paymentMethodsVal.whereType<String>().toList()
+          : List.of(defaultPaymentMethods);
       if (resolvedName != _name ||
           resolvedPpp != _pesosPerPoint ||
           resolvedBonus != _sameDayBonusPercent ||
           resolvedRedeemPpp != _redeemPesosPerPoint ||
           resolvedBonusStart != _sameDayBonusStartDate ||
-          !listEquals(resolvedCustomerGroups, _customerGroups)) {
+          !listEquals(resolvedCustomerGroups, _customerGroups) ||
+          !listEquals(resolvedPaymentMethods, _paymentMethods)) {
         _name = resolvedName;
         _pesosPerPoint = resolvedPpp;
         _sameDayBonusPercent = resolvedBonus;
         _redeemPesosPerPoint = resolvedRedeemPpp;
         _sameDayBonusStartDate = resolvedBonusStart;
         _customerGroups = resolvedCustomerGroups;
+        _paymentMethods = resolvedPaymentMethods;
         notifyListeners();
       }
     } catch (_) {
@@ -139,6 +149,17 @@ class BusinessSettingsController extends ChangeNotifier {
     await _saveMetadata();
   }
 
+  Future<void> setPaymentMethods(List<String> methods) async {
+    final cleaned = methods
+        .map((m) => m.trim())
+        .where((m) => m.isNotEmpty)
+        .toSet()
+        .toList();
+    _paymentMethods = cleaned.isEmpty ? List.of(defaultPaymentMethods) : cleaned;
+    notifyListeners();
+    await _saveMetadata();
+  }
+
   // Sends the full local state every time, not just the changed field - in
   // case the server merges shallowly or replaces user_metadata wholesale,
   // this keeps all keys consistent either way.
@@ -151,6 +172,7 @@ class BusinessSettingsController extends ChangeNotifier {
         _kRedeemPesosPerPointKey: _redeemPesosPerPoint,
         _kSameDayBonusStartDateKey: _sameDayBonusStartDate.toIso8601String(),
         _kCustomerGroupsKey: _customerGroups,
+        _kPaymentMethodsKey: _paymentMethods,
       }),
     );
   }

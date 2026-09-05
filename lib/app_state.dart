@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'models/batch.dart';
 import 'models/customer.dart';
+import 'models/customer_credit.dart';
 import 'models/customer_favorite.dart';
 import 'models/loyalty_adjustment.dart';
 import 'models/product.dart';
@@ -21,6 +22,8 @@ class AppState extends ChangeNotifier {
   List<Sale> sales = [];
   List<LoyaltyAdjustment> loyaltyAdjustments = [];
   List<CustomerFavorite> customerFavorites = [];
+  List<SalePayment> salePayments = [];
+  List<CustomerCredit> customerCredits = [];
 
   late final StreamSubscription _productsSub;
   late final StreamSubscription _customersSub;
@@ -28,6 +31,8 @@ class AppState extends ChangeNotifier {
   late final StreamSubscription _salesSub;
   late final StreamSubscription _loyaltyAdjustmentsSub;
   late final StreamSubscription _customerFavoritesSub;
+  late final StreamSubscription _salePaymentsSub;
+  late final StreamSubscription _customerCreditsSub;
 
   AppState(this.repository) {
     _productsSub = repository.watchProducts().listen((v) {
@@ -52,6 +57,14 @@ class AppState extends ChangeNotifier {
     });
     _customerFavoritesSub = repository.watchCustomerFavorites().listen((v) {
       customerFavorites = v;
+      notifyListeners();
+    });
+    _salePaymentsSub = repository.watchSalePayments().listen((v) {
+      salePayments = v;
+      notifyListeners();
+    });
+    _customerCreditsSub = repository.watchCustomerCredits().listen((v) {
+      customerCredits = v;
       notifyListeners();
     });
   }
@@ -97,6 +110,8 @@ class AppState extends ChangeNotifier {
     _salesSub.cancel();
     _loyaltyAdjustmentsSub.cancel();
     _customerFavoritesSub.cancel();
+    _salePaymentsSub.cancel();
+    _customerCreditsSub.cancel();
     super.dispose();
   }
 }

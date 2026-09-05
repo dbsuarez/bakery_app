@@ -6,8 +6,8 @@ import '../../app_state.dart';
 import '../../models/batch.dart';
 import '../../utils/app_date_format.dart';
 import '../widgets/product_avatar.dart';
-import 'batch_detail_screen.dart';
 import 'batch_form_screen.dart';
+import 'swipeable_batch_detail_screen.dart';
 import 'unpaid_report_screen.dart';
 
 enum BatchFilter { all, awaiting, remitted, personal }
@@ -213,8 +213,10 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                                 : Text('₱${batch.totalValue.toStringAsFixed(2)}'),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) =>
-                                BatchDetailScreen(batchId: batch.id),
+                            builder: (_) => SwipeableBatchDetailScreen(
+                              batchIds: batches.map((b) => b.id).toList(),
+                              initialIndex: batches.indexOf(batch),
+                            ),
                           ),
                         ),
                       );

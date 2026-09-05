@@ -1,19 +1,50 @@
 import '../models/batch.dart';
 import '../models/customer.dart';
+import '../models/customer_credit.dart';
 import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 
+/// Sum of a sale's non-deleted installment payments.
+double salePaidAmount(int saleId, List<SalePayment> payments) {
+  return payments
+      .where((p) => p.saleId == saleId && !p.isDeleted)
+      .fold(0.0, (sum, p) => sum + p.amount);
+}
+
+/// How much of [sale] is still owed after any partial payments -
+/// [sale.amount] itself never changes; partial payments just chip away at
+/// what's outstanding until it flips to `paid`. Never negative.
+double saleRemainingAmount(Sale sale, List<SalePayment> payments) {
+  final remaining = sale.amount - salePaidAmount(sale.id, payments);
+  return remaining < 0 ? 0 : remaining;
+}
+
 /// Spec section 7 rule 6: customer balances include only unpaid
-/// customer_sale rows.
-double customerBalance(int customerId, List<Sale> sales) {
+/// customer_sale rows, net of any partial payments already received
+/// against them.
+double customerBalance(
+  int customerId,
+  List<Sale> sales, [
+  List<SalePayment> payments = const [],
+]) {
   return sales
       .where((s) =>
           s.customerId == customerId &&
           !s.isDeleted &&
           !s.paid &&
           s.saleType == SaleType.customerSale)
-      .fold(0.0, (sum, s) => sum + s.amount);
+      .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, payments));
+}
+
+/// A customer's running credit balance - positive means the bakery owes
+/// them (e.g. an overpayment from a batch price correction), negative
+/// would mean they owe a touch more (rare - a price increase after they'd
+/// paid). See [CustomerCredit] for how entries are created.
+double customerCreditBalance(int customerId, List<CustomerCredit> credits) {
+  return credits
+      .where((c) => c.customerId == customerId && !c.isDeleted)
+      .fold(0.0, (sum, c) => sum + c.amount);
 }
 
 int customerOrderCount(int customerId, List<Sale> sales) {

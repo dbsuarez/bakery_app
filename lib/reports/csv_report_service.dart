@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../analytics/customer_calculations.dart';
 import '../app_state.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
@@ -44,6 +45,9 @@ String buildSalesCsv(
     'Quantity',
     'Unit Price',
     'Amount',
+    'Discount',
+    'Amount Paid',
+    'Amount Remaining',
     'Sale Type',
     'Paid',
     'Date Paid',
@@ -63,6 +67,9 @@ String buildSalesCsv(
       s.quantity,
       batch?.unitPrice ?? '',
       s.amount.toStringAsFixed(2),
+      s.discount.toStringAsFixed(2),
+      salePaidAmount(s.id, state.salePayments).toStringAsFixed(2),
+      saleRemainingAmount(s, state.salePayments).toStringAsFixed(2),
       _saleTypeLabel(s.saleType),
       s.saleType == SaleType.customerSale ? (s.paid ? 'Yes' : 'No') : '',
       s.datePaid == null ? '' : appDateFormat.format(s.datePaid!),
@@ -72,7 +79,8 @@ String buildSalesCsv(
 
   final totalAmount = rows.fold<double>(0, (sum, s) => sum + s.amount);
   buffer.writeln();
-  buffer.writeln('${_csvField('Total')},,,,,,,${totalAmount.toStringAsFixed(2)}');
+  buffer.writeln('${_csvField('Total')},,,,,,,${totalAmount.toStringAsFixed(2)}'
+      ',,,,,,');
 
   return buffer.toString();
 }

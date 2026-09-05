@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../app_state.dart';
 import '../../products/product_photo_service.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 
 class MediaManagerScreen extends StatefulWidget {
   const MediaManagerScreen({super.key});
@@ -160,6 +161,11 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
                   onToggle: (path) => setState(() {
                     if (!_selected.remove(path)) _selected.add(path);
                   }),
+                  onPreview: (index) => showFullscreenImageGallery(
+                    context,
+                    imageUrls: unused.map((f) => f.publicUrl).toList(),
+                    initialIndex: index,
+                  ),
                 ),
               const SizedBox(height: 24),
               Text('In use (${used.length})',
@@ -182,6 +188,14 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
                     ),
                   ));
                 },
+                onPreview: (index) => showFullscreenImageGallery(
+                  context,
+                  imageUrls: used.map((f) => f.publicUrl).toList(),
+                  titles: used
+                      .map((f) => usedByUrl[stripCacheBust(f.publicUrl)])
+                      .toList(),
+                  initialIndex: index,
+                ),
               ),
             ],
           );
@@ -270,6 +284,7 @@ class _PhotoGrid extends StatelessWidget {
   final ValueChanged<String> onToggle;
   final String? Function(String path, String url)? labelForPath;
   final void Function(String path, String url)? onUsedTap;
+  final ValueChanged<int>? onPreview;
   const _PhotoGrid({
     required this.files,
     required this.selectable,
@@ -277,6 +292,7 @@ class _PhotoGrid extends StatelessWidget {
     required this.onToggle,
     this.labelForPath,
     this.onUsedTap,
+    this.onPreview,
   });
 
   @override
@@ -346,6 +362,24 @@ class _PhotoGrid extends StatelessWidget {
                           ),
                           child: const Icon(Icons.lock_outline,
                               size: 16, color: Colors.white),
+                        ),
+                      ),
+                    if (onPreview != null)
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: Material(
+                          color: Colors.black45,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => onPreview!(index),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.zoom_in,
+                                  size: 16, color: Colors.white),
+                            ),
+                          ),
                         ),
                       ),
                   ],

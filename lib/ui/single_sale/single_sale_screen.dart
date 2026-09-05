@@ -27,9 +27,11 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
   int? _customerId;
   int _quantity = 1;
   final _amountController = TextEditingController();
+  final _discountController = TextEditingController(text: '0');
   bool _amountEdited = false;
   bool _paid = false;
   DateTime? _datePaid;
+  String? _paymentMethod;
   SaleType _saleType = SaleType.customerSale;
   final _notesController = TextEditingController();
 
@@ -97,12 +99,15 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
             redeemPesosPerPoint: business.redeemPesosPerPoint)
         : 0;
 
+    final discount = double.tryParse(_discountController.text) ?? 0;
     if (!_amountEdited) {
       if (_saleType == SaleType.internalConsumption || isRedemption) {
         _amountController.text = '0';
       } else if (batch != null) {
+        final full = _quantity * batch.unitPrice;
+        final discounted = full - discount;
         _amountController.text =
-            (_quantity * batch.unitPrice).toStringAsFixed(2);
+            (discounted < 0 ? 0 : discounted).toStringAsFixed(2);
       }
     }
 
@@ -190,6 +195,27 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                 );
               },
             ),
+            if (_customerId != null)
+              Builder(builder: (context) {
+                final creditBalance = customerCreditBalance(
+                    _customerId!, appState.customerCredits);
+                if (creditBalance == 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    creditBalance > 0
+                        ? 'This customer has ₱${creditBalance.toStringAsFixed(2)} '
+                            'credit available - consider deducting it from this order.'
+                        : 'This customer has a ₱${creditBalance.abs().toStringAsFixed(2)} '
+                            'debit on file.',
+                    style: TextStyle(
+                      color: creditBalance > 0
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
+                    ),
+                  ),
+                );
+              }),
             DropdownButtonFormField<SaleType>(
               initialValue: _saleType,
               decoration: const InputDecoration(labelText: 'Sale type'),
@@ -244,6 +270,24 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                 ],
               ),
             ),
+            if (_saleType == SaleType.customerSale)
+              TextFormField(
+                controller: _discountController,
+                decoration: const InputDecoration(
+                  labelText: 'Discount (optional)',
+                  helperText: 'Knocked off the full price - tracked separately '
+                      'from the charged amount',
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return null;
+                  final n = double.tryParse(v);
+                  if (n == null || n < 0) return 'Enter a valid discount';
+                  return null;
+                },
+              ),
             TextFormField(
               controller: _amountController,
               enabled: !isRedemption,
@@ -264,6 +308,10 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                 onChanged: (v) => setState(() {
                   _paid = v;
                   _datePaid = v ? (_datePaid ?? DateTime.now()) : null;
+                  if (v && _paymentMethod == null) {
+                    final methods = business.paymentMethods;
+                    _paymentMethod = methods.isEmpty ? null : methods.first;
+                  }
                 }),
               ),
             if (!isRedemption && _paid)
@@ -281,6 +329,16 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                   );
                   if (picked != null) setState(() => _datePaid = picked);
                 },
+              ),
+            if (!isRedemption && _paid && business.paymentMethods.isNotEmpty)
+              DropdownButtonFormField<String>(
+                initialValue: _paymentMethod,
+                decoration: const InputDecoration(labelText: 'Payment method'),
+                items: [
+                  for (final m in business.paymentMethods)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) => setState(() => _paymentMethod = v),
               ),
             TextFormField(
               controller: _notesController,
@@ -352,6 +410,9 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     final paid = isRedemption ? true : _paid;
     final datePaid = isRedemption ? DateTime.now() : (_paid ? _datePaid : null);
     final amount = isRedemption ? 0.0 : double.parse(_amountController.text);
+    final discount = _saleType == SaleType.customerSale
+        ? (double.tryParse(_discountController.text) ?? 0)
+        : 0.0;
 
     // Unpaid additions fold into this customer's existing unpaid line for
     // the same batch + sale type instead of fragmenting into separate rows.
@@ -380,6 +441,7 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
           saleDate: mergeTarget.saleDate,
           quantity: mergeTarget.quantity + quantity,
           amount: mergeTarget.amount + amount,
+          discount: mergeTarget.discount + discount,
           paid: false,
           datePaid: null,
           saleType: mergeTarget.saleType,
@@ -396,8 +458,10 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
           saleDate: DateTime.now(),
           quantity: quantity,
           amount: amount,
+          discount: discount,
           paid: paid,
           datePaid: datePaid,
+          paymentMethod: paid ? _paymentMethod : null,
           saleType: _saleType,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           updatedAt: DateTime.now(),

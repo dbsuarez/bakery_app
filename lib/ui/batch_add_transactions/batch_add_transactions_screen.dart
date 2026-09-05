@@ -9,6 +9,7 @@ import '../../models/batch.dart';
 import '../../models/customer.dart';
 import '../../models/sale.dart';
 import '../../repository/bakery_repository.dart';
+import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
 import '../widgets/product_avatar.dart';
 
@@ -20,8 +21,10 @@ class _Row {
   int quantity;
   double amount;
   bool amountEdited;
+  double discount;
   bool paid;
   DateTime? datePaid;
+  String? paymentMethod;
   String? notes;
   SaleType saleType;
 
@@ -31,8 +34,10 @@ class _Row {
     required this.quantity,
     required this.amount,
     this.amountEdited = false,
+    this.discount = 0,
     required this.paid,
     this.datePaid,
+    this.paymentMethod,
     this.notes,
     this.saleType = SaleType.customerSale,
   });
@@ -44,8 +49,10 @@ class _Row {
       quantity: sale.quantity,
       amount: sale.amount,
       amountEdited: true,
+      discount: sale.discount,
       paid: sale.paid,
       datePaid: sale.datePaid,
+      paymentMethod: sale.paymentMethod,
       notes: sale.notes,
       saleType: sale.saleType,
     );
@@ -469,8 +476,10 @@ class _BatchAddTransactionsScreenState
           customerId: r.customerId,
           quantity: r.quantity,
           amount: amount,
+          discount: r.discount,
           paid: r.paid,
           datePaid: datePaid,
+          paymentMethod: r.paid ? r.paymentMethod : null,
           notes: r.notes,
         ));
       } else {
@@ -481,8 +490,10 @@ class _BatchAddTransactionsScreenState
           saleDate: original.saleDate,
           quantity: r.quantity,
           amount: amount,
+          discount: r.discount,
           paid: r.paid,
           datePaid: datePaid,
+          paymentMethod: r.paid ? r.paymentMethod : null,
           saleType: r.saleType,
           notes: r.notes,
           updatedAt: DateTime.now(),
@@ -664,6 +675,7 @@ class _RowEditor extends StatefulWidget {
 
 class _RowEditorState extends State<_RowEditor> {
   late final TextEditingController _amountController;
+  late final TextEditingController _discountController;
   late final TextEditingController _notesController;
 
   @override
@@ -674,6 +686,8 @@ class _RowEditorState extends State<_RowEditor> {
           ? widget.row.amount.toStringAsFixed(2)
           : (widget.row.quantity * widget.batch.unitPrice).toStringAsFixed(2),
     );
+    _discountController =
+        TextEditingController(text: widget.row.discount.toStringAsFixed(2));
     _notesController = TextEditingController(text: widget.row.notes);
   }
 
@@ -753,6 +767,23 @@ class _RowEditorState extends State<_RowEditor> {
                   },
                 ),
               ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _discountController,
+                  decoration:
+                      const InputDecoration(labelText: 'Discount (optional)'),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (v) {
+                    row.discount = double.tryParse(v) ?? 0;
+                    widget.onChanged();
+                  },
+                ),
+              ),
               const SizedBox(width: 12),
               const Text('Paid'),
               Switch(
@@ -788,6 +819,25 @@ class _RowEditorState extends State<_RowEditor> {
                 }
               },
             ),
+          if (row.paid)
+            Builder(builder: (context) {
+              final methods =
+                  context.watch<BusinessSettingsController>().paymentMethods;
+              if (methods.isEmpty) return const SizedBox.shrink();
+              row.paymentMethod ??= methods.first;
+              return DropdownButtonFormField<String>(
+                initialValue: row.paymentMethod,
+                decoration: const InputDecoration(labelText: 'Payment method'),
+                items: [
+                  for (final m in methods)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) {
+                  setState(() => row.paymentMethod = v);
+                  widget.onChanged();
+                },
+              );
+            }),
           TextField(
             controller: _notesController,
             decoration: const InputDecoration(labelText: 'Notes (optional)'),

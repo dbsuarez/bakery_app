@@ -7,6 +7,7 @@ import '../../analytics/batch_calculations.dart';
 import '../../analytics/customer_calculations.dart';
 import '../../app_state.dart';
 import '../../models/customer.dart';
+import '../../models/customer_credit.dart';
 import '../../models/loyalty_adjustment.dart';
 import '../../models/product.dart';
 import '../../models/sale.dart';
@@ -60,7 +61,9 @@ class CustomerLedgerScreen extends StatelessWidget {
         if (aUnpaid != bUnpaid) return aUnpaid ? -1 : 1;
         return b.saleDate.compareTo(a.saleDate);
       });
-    final balance = customerBalance(customerId, appState.sales);
+    final balance = customerBalance(customerId, appState.sales, appState.salePayments);
+    final creditBalance =
+        customerCreditBalance(customerId, appState.customerCredits);
     final business = context.watch<BusinessSettingsController>();
     final pointsByCategory = {
       for (final category in ProductCategory.values)
@@ -103,8 +106,20 @@ class CustomerLedgerScreen extends StatelessWidget {
               if (value == 'merge') {
                 _mergeCustomer(context, appState, customer);
               }
+              if (value == 'markAllPaid') {
+                _markAllPaid(context, appState);
+              }
             },
             itemBuilder: (context) => [
+              if (!customer.isPseudoCustomer)
+                const PopupMenuItem(
+                  value: 'markAllPaid',
+                  child: ListTile(
+                    leading: Icon(Icons.checklist),
+                    title: Text('Mark all paid'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               if (!customer.isPseudoCustomer)
                 const PopupMenuItem(
                   value: 'adjust',
@@ -163,6 +178,34 @@ class CustomerLedgerScreen extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleMedium),
                     ],
                   ),
+                  if (creditBalance != 0)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Credit available:'),
+                        Row(
+                          children: [
+                            Text(
+                              _currency.format(creditBalance),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(color: Colors.green.shade700),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline,
+                                  size: 18),
+                              tooltip: 'Apply or refund credit',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.only(left: 4),
+                              onPressed: () => _applyOrRefundCredit(
+                                  context, customer, creditBalance),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   Text('Total orders: ${customerOrderCount(customerId, appState.sales)}'),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -217,34 +260,52 @@ class CustomerLedgerScreen extends StatelessWidget {
               child: Text('No transactions yet.'),
             ),
           for (final sale in sales)
-            ListTile(
-              leading: Builder(builder: (context) {
-                final batch = appState.batchById(sale.batchId);
-                final product =
-                    batch == null ? null : appState.productById(batch.productId);
-                return ProductAvatar(imageUrl: product?.imageUrl);
-              }),
-              title: Text(
-                '${appState.batchById(sale.batchId) != null ? appState.productById(appState.batchById(sale.batchId)!.productId)?.title ?? '' : ''} '
-                '× ${sale.quantity}',
-              ),
-              subtitle: Text(
-                '${appDateFormat.format(sale.saleDate)} · ${_currency.format(sale.amount)}',
-              ),
-              trailing: sale.saleType.value != 'customer_sale'
-                  ? Chip(
-                      label: Text(_saleTypeLabel(sale.saleType.value)),
-                      labelStyle: Theme.of(context).textTheme.labelSmall,
-                      labelPadding:
-                          const EdgeInsets.symmetric(horizontal: 6),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    )
-                  : Switch(
-                      value: sale.paid,
-                      onChanged: (v) => _togglePaid(context, sale.id, v),
-                    ),
-            ),
+            Builder(builder: (context) {
+              final batch = appState.batchById(sale.batchId);
+              final product =
+                  batch == null ? null : appState.productById(batch.productId);
+              final isCustomerSale = sale.saleType == SaleType.customerSale;
+              final paidSoFar = isCustomerSale
+                  ? salePaidAmount(sale.id, appState.salePayments)
+                  : 0.0;
+              final remaining = isCustomerSale
+                  ? saleRemainingAmount(sale, appState.salePayments)
+                  : sale.amount;
+              return ListTile(
+                leading: ProductAvatar(imageUrl: product?.imageUrl),
+                title: Text(
+                  '${product?.title ?? ''} × ${sale.quantity}',
+                ),
+                subtitle: Text(
+                  (!sale.paid && isCustomerSale && paidSoFar > 0
+                          ? '${appDateFormat.format(sale.saleDate)} · '
+                              '${_currency.format(paidSoFar)} of ${_currency.format(sale.amount)} paid'
+                          : '${appDateFormat.format(sale.saleDate)} · ${_currency.format(sale.amount)}') +
+                      (sale.discount > 0
+                          ? ' · ${_currency.format(sale.discount)} discount'
+                          : ''),
+                ),
+                trailing: !isCustomerSale
+                    ? Chip(
+                        label: Text(_saleTypeLabel(sale.saleType.value)),
+                        labelStyle: Theme.of(context).textTheme.labelSmall,
+                        labelPadding:
+                            const EdgeInsets.symmetric(horizontal: 6),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )
+                    : sale.paid
+                        ? Switch(
+                            value: true,
+                            onChanged: (v) => _togglePaid(context, sale.id, v),
+                          )
+                        : TextButton(
+                            onPressed: () =>
+                                _recordPayment(context, sale, remaining),
+                            child: Text(_currency.format(remaining)),
+                          ),
+              );
+            }),
         ],
       ),
     );
@@ -958,17 +1019,77 @@ class CustomerLedgerScreen extends StatelessWidget {
     }
   }
 
+  /// Shows a payment date + method picker in one dialog. Returns null if
+  /// cancelled.
+  Future<(DateTime date, String? method)?> _pickPaymentDateAndMethod(
+    BuildContext context, {
+    DateTime? initialDate,
+    String? helpText,
+  }) async {
+    final methods = context.read<BusinessSettingsController>().paymentMethods;
+    var date = initialDate ?? DateTime.now();
+    String? method = methods.isEmpty ? null : methods.first;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(helpText ?? 'Payment details'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Date: ${appDateFormat.format(date)}'),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: date,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setDialogState(() => date = picked);
+                },
+              ),
+              if (methods.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: method,
+                  decoration: const InputDecoration(labelText: 'Payment method'),
+                  items: [
+                    for (final m in methods)
+                      DropdownMenuItem(value: m, child: Text(m)),
+                  ],
+                  onChanged: (v) => setDialogState(() => method = v),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return null;
+    return (date, method);
+  }
+
   Future<void> _togglePaid(BuildContext context, int saleId, bool paid) async {
     final repo = context.read<BakeryRepository>();
     if (paid) {
-      final picked = await showDatePicker(
-        context: context,
-        initialDate: DateTime.now(),
-        firstDate: DateTime(2020),
-        lastDate: DateTime(2100),
-      );
+      final picked = await _pickPaymentDateAndMethod(context);
       if (picked == null || !context.mounted) return;
-      await runGuarded(context, () => repo.markSalePaid(saleId, picked));
+      await runGuarded(
+        context,
+        () => repo.markSalePaid(saleId, picked.$1, paymentMethod: picked.$2),
+      );
     } else {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -992,6 +1113,242 @@ class CustomerLedgerScreen extends StatelessWidget {
       if (confirmed != true || !context.mounted) return;
       await runGuarded(context, () => repo.markSaleUnpaid(saleId));
     }
+  }
+
+  Future<void> _recordPayment(
+    BuildContext context,
+    Sale sale,
+    double remaining,
+  ) async {
+    final amountController =
+        TextEditingController(text: remaining.toStringAsFixed(2));
+    var paymentDate = DateTime.now();
+    final methods = context.read<BusinessSettingsController>().paymentMethods;
+    String? paymentMethod = methods.isEmpty ? null : methods.first;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Record payment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Remaining balance: ${_currency.format(remaining)}'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                decoration: const InputDecoration(labelText: 'Amount paid now'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Enter less than the remaining balance to record a partial '
+                'payment - the transaction stays unpaid until it\'s fully '
+                'covered.',
+                style: TextStyle(fontSize: 12),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Date: ${appDateFormat.format(paymentDate)}'),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: paymentDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) {
+                    setDialogState(() => paymentDate = picked);
+                  }
+                },
+              ),
+              if (methods.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: paymentMethod,
+                  decoration: const InputDecoration(labelText: 'Payment method'),
+                  items: [
+                    for (final m in methods)
+                      DropdownMenuItem(value: m, child: Text(m)),
+                  ],
+                  onChanged: (v) => setDialogState(() => paymentMethod = v),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Record'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final amount = double.tryParse(amountController.text);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid payment amount.')),
+      );
+      return;
+    }
+    if (amount > remaining + 0.01) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Amount can\'t exceed the remaining ${_currency.format(remaining)}.'),
+      ));
+      return;
+    }
+
+    await runGuarded(
+      context,
+      () => context.read<BakeryRepository>().addSalePayment(SalePayment(
+            id: 0,
+            saleId: sale.id,
+            amount: amount,
+            paymentDate: paymentDate,
+            paymentMethod: paymentMethod,
+            updatedAt: DateTime.now(),
+          )),
+    );
+  }
+
+  Future<void> _markAllPaid(BuildContext context, AppState appState) async {
+    final unpaid = appState.sales
+        .where((s) =>
+            s.customerId == customerId &&
+            !s.isDeleted &&
+            !s.paid &&
+            s.saleType == SaleType.customerSale)
+        .toList();
+    if (unpaid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No unpaid transactions.')),
+      );
+      return;
+    }
+    final totalRemaining = unpaid.fold<double>(
+        0, (sum, s) => sum + saleRemainingAmount(s, appState.salePayments));
+
+    final picked = await _pickPaymentDateAndMethod(
+      context,
+      helpText: 'Payment for all ${unpaid.length} transaction(s)',
+    );
+    if (picked == null || !context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark all paid?'),
+        content: Text(
+          'This marks all ${unpaid.length} unpaid transaction(s) - totaling '
+          '${_currency.format(totalRemaining)} still owed - as fully paid on '
+          '${appDateFormat.format(picked.$1)}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Mark All Paid'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final repo = context.read<BakeryRepository>();
+    await runGuarded(context, () async {
+      for (final sale in unpaid) {
+        await repo.markSalePaid(sale.id, picked.$1, paymentMethod: picked.$2);
+      }
+    });
+  }
+
+  Future<void> _applyOrRefundCredit(
+    BuildContext context,
+    Customer customer,
+    double creditBalance,
+  ) async {
+    final amountController =
+        TextEditingController(text: creditBalance.abs().toStringAsFixed(2));
+    final reasonController = TextEditingController(
+      text: creditBalance > 0 ? 'Refunded in cash' : 'Correction',
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Apply or refund credit'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Current balance: ${_currency.format(creditBalance)}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountController,
+              decoration: const InputDecoration(
+                labelText: 'Amount to deduct from the balance',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Reason (e.g. "Applied to order", "Refunded cash")',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Record'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final amount = double.tryParse(amountController.text);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid amount.')),
+      );
+      return;
+    }
+
+    await runGuarded(
+      context,
+      () => context.read<BakeryRepository>().addCustomerCredit(CustomerCredit(
+            id: 0,
+            customerId: customer.id,
+            amount: -amount,
+            reason: reasonController.text.trim().isEmpty
+                ? null
+                : reasonController.text.trim(),
+            creditDate: DateTime.now(),
+            updatedAt: DateTime.now(),
+          )),
+    );
   }
 }
 

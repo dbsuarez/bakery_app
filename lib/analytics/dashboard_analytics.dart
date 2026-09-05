@@ -160,6 +160,7 @@ DashboardData computeDashboard({
   required List<Customer> customers,
   required List<Batch> batches,
   required List<Sale> sales,
+  List<SalePayment> salePayments = const [],
   DateTime? now,
 }) {
   final today = now ?? DateTime.now();
@@ -179,7 +180,7 @@ DashboardData computeDashboard({
 
   final outstandingReceivables = businessSales
       .where((s) => !s.paid && s.saleType == SaleType.customerSale)
-      .fold(0.0, (sum, s) => sum + s.amount);
+      .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, salePayments));
 
   // Once a batch is remitted, its full value (paid + unpaid) has already
   // gone out; any still-unpaid amount is money the owner personally
@@ -190,7 +191,7 @@ DashboardData computeDashboard({
           !s.paid &&
           s.saleType == SaleType.customerSale &&
           remittedBatchIds.contains(s.batchId))
-      .fold(0.0, (sum, s) => sum + s.amount);
+      .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, salePayments));
 
   // Value of unsold inventory, tracked separately from receivables since
   // it isn't money any customer owes (spec section 7 rule 6). Computed from
@@ -257,9 +258,15 @@ DashboardData computeDashboard({
   if (!saleDays.contains(streakDay)) {
     streakDay = streakDay.subtract(const Duration(days: 1));
   }
+  // Sundays are exempt: a Sunday with no sale doesn't break the streak
+  // (the bakery doesn't operate that day), it just doesn't add to the count.
   var salesStreak = 0;
-  while (saleDays.contains(streakDay)) {
-    salesStreak++;
+  while (true) {
+    if (saleDays.contains(streakDay)) {
+      salesStreak++;
+    } else if (streakDay.weekday != DateTime.sunday) {
+      break;
+    }
     streakDay = streakDay.subtract(const Duration(days: 1));
   }
 
@@ -306,7 +313,8 @@ DashboardData computeDashboard({
     ..sort((a, b) => b.value.compareTo(a.value));
 
   final unpaidStats = liveCustomers
-      .map((c) => CustomerStat(c, customerBalance(c.id, businessSales)))
+      .map((c) =>
+          CustomerStat(c, customerBalance(c.id, businessSales, salePayments)))
       .where((s) => s.value > 0)
       .toList()
     ..sort((a, b) => b.value.compareTo(a.value));
@@ -421,7 +429,7 @@ DashboardData computeDashboard({
           personalBatchIdSet.contains(s.batchId) &&
           !s.paid &&
           s.saleType == SaleType.customerSale)
-      .fold(0.0, (sum, s) => sum + s.amount);
+      .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, salePayments));
   final personalRevenue = liveSales
       .where((s) =>
           personalBatchIdSet.contains(s.batchId) &&

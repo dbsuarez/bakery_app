@@ -1,5 +1,6 @@
 import '../models/batch.dart';
 import '../models/customer.dart';
+import '../models/customer_credit.dart';
 import '../models/customer_favorite.dart';
 import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
@@ -12,6 +13,8 @@ abstract class BakeryRepository {
   Stream<List<Sale>> watchSales();
   Stream<List<LoyaltyAdjustment>> watchLoyaltyAdjustments();
   Stream<List<CustomerFavorite>> watchCustomerFavorites();
+  Stream<List<SalePayment>> watchSalePayments();
+  Stream<List<CustomerCredit>> watchCustomerCredits();
 
   Future<void> createProduct(Product product);
   Future<void> createCustomer(Customer customer);
@@ -21,7 +24,11 @@ abstract class BakeryRepository {
     int batchId,
     List<BatchTransactionEntry> entries,
   );
-  Future<void> markSalePaid(int saleId, DateTime paymentDate);
+  Future<void> markSalePaid(
+    int saleId,
+    DateTime paymentDate, {
+    String? paymentMethod,
+  });
   Future<void> markSaleUnpaid(int saleId);
   Future<void> markBatchRemitted(int batchId, DateTime dateRemitted);
   Future<void> unlockBatch(int batchId);
@@ -55,4 +62,27 @@ abstract class BakeryRepository {
 
   Future<void> addCustomerFavorite(int customerId, int productId);
   Future<void> removeCustomerFavorite(int customerId, int productId);
+
+  /// Records a partial/installment payment against [saleId]. If it (plus
+  /// any prior payments) now covers the sale's full amount, the sale is
+  /// automatically flipped to paid with this payment's date.
+  Future<void> addSalePayment(SalePayment payment);
+
+  /// Records a customer credit ledger entry - positive to grant credit
+  /// (e.g. an overpayment), negative to consume it (applied to a purchase
+  /// or refunded in cash).
+  Future<void> addCustomerCredit(CustomerCredit credit);
+
+  /// Re-prices every non-deleted `customer_sale` transaction in [batchId]
+  /// to [newUnitPrice] (preserving each sale's discount). Unpaid sales just
+  /// have their amount updated. Paid sales also get their amount updated,
+  /// but the difference from what was actually collected at [oldUnitPrice]
+  /// is recorded as a [CustomerCredit] entry against that sale's customer,
+  /// rather than silently disappearing - a decrease becomes credit owed to
+  /// them, an increase becomes a (rare) negative credit.
+  Future<void> reconcileBatchUnitPrice(
+    int batchId,
+    double oldUnitPrice,
+    double newUnitPrice,
+  );
 }

@@ -53,6 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       customers: appState.customers,
       batches: appState.batches,
       sales: appState.sales,
+      salePayments: appState.salePayments,
     );
 
     WidgetsBinding.instance

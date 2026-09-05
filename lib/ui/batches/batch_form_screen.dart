@@ -302,6 +302,8 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
   Future<void> _save(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     final repo = context.read<BakeryRepository>();
+    final originalUnitPrice =
+        _isEdit ? context.read<AppState>().batchById(widget.batchId!)?.unitPrice : null;
     final batch = Batch(
       id: widget.batchId ?? 0,
       productId: _productId!,
@@ -320,6 +322,12 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
         await repo.createBatch(batch);
       }
       _dirty = false;
+      if (_isEdit &&
+          originalUnitPrice != null &&
+          originalUnitPrice != batch.unitPrice &&
+          context.mounted) {
+        await _offerReprice(context, repo, batch.id, originalUnitPrice, batch.unitPrice);
+      }
       if (!context.mounted) return;
       // Heads-up (spec: favorites): a fresh batch of a product someone has
       // favorited is worth flagging right away, not just on the Dashboard.
@@ -350,6 +358,54 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Future<void> _offerReprice(
+    BuildContext context,
+    BakeryRepository repo,
+    int batchId,
+    double oldPrice,
+    double newPrice,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Update existing transactions?'),
+        content: Text(
+          'The unit price changed from ₱${oldPrice.toStringAsFixed(2)} to '
+          '₱${newPrice.toStringAsFixed(2)}. Apply this to every transaction '
+          'already recorded in this batch?\n\n'
+          'Unpaid transactions just get the new amount. Paid ones also get '
+          'the new amount, and the difference from what was actually '
+          'collected is recorded as a credit (or debit) on that customer\'s '
+          'account - nothing is silently lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Leave them as-is'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Update transactions'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await repo.reconcileBatchUnitPrice(batchId, oldPrice, newPrice);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Transactions updated to the new price.'),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not update transactions: $e')));
       }
     }
   }

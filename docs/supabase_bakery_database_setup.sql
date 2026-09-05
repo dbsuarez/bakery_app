@@ -63,16 +63,39 @@ create table public.sales (
   sale_date date not null,
   quantity integer not null default 1,
   amount numeric(12,2) not null,
+  -- Purely informational: how much was knocked off the full
+  -- quantity*unit_price to arrive at `amount`. `amount` remains the actual
+  -- charged/owed figure everywhere else in the app.
+  discount numeric(12,2) not null default 0,
   paid boolean not null default false,
   date_paid date,
+  payment_method text,
   sale_type text not null default 'customer_sale',
   notes text,
   updated_at timestamptz not null default now(),
   is_deleted boolean not null default false,
   constraint sales_quantity_positive check (quantity > 0),
   constraint sales_amount_nonnegative check (amount >= 0),
+  constraint sales_discount_nonnegative check (discount >= 0),
   constraint sales_type_valid check (sale_type in ('customer_sale', 'unsold', 'internal_consumption', 'points_redemption')),
   constraint sales_payment_date_valid check (paid = true or date_paid is null)
+);
+
+-- Installment/partial payments against an unpaid sale. The sale keeps its
+-- full `amount`; it flips to `paid = true` only once the sum of its
+-- payments covers that amount. A sale with no rows here and paid = true
+-- was simply paid in full in one go (no installment history needed).
+create table public.sale_payments (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  sale_id uuid not null references public.sales(id),
+  amount numeric(12,2) not null,
+  payment_date date not null default current_date,
+  payment_method text,
+  notes text,
+  updated_at timestamptz not null default now(),
+  is_deleted boolean not null default false,
+  constraint sale_payments_amount_positive check (amount > 0)
 );
 
 -- Manual loyalty-points corrections (goodwill credits, error fixes) that
@@ -92,6 +115,26 @@ create table public.loyalty_adjustments (
   is_deleted boolean not null default false,
   constraint loyalty_adjustments_category_valid check (category in ('bakery', 'merchandise')),
   constraint loyalty_adjustments_points_nonzero check (points <> 0)
+);
+
+-- A running credit ledger per customer - e.g. they overpaid because a
+-- batch's unit price was corrected downward after they'd already paid at
+-- the old (higher) price. Positive amount = credit owed to the customer;
+-- negative = credit consumed (applied to a later purchase) or refunded in
+-- cash. Balance = sum of amounts. Not auto-applied to future sales - it's
+-- surfaced in the UI so the person taking the next order can deduct it
+-- manually, since the customer may prefer a cash refund instead.
+create table public.customer_credits (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  customer_id uuid not null references public.customers(id),
+  amount numeric(12,2) not null,
+  reason text,
+  sale_id uuid references public.sales(id),
+  credit_date date not null default current_date,
+  updated_at timestamptz not null default now(),
+  is_deleted boolean not null default false,
+  constraint customer_credits_amount_nonzero check (amount <> 0)
 );
 
 -- Which products a customer likes, so a new batch of that product can
@@ -123,6 +166,10 @@ create index loyalty_adjustments_customer_id_idx on public.loyalty_adjustments(c
 create index loyalty_adjustments_updated_at_idx on public.loyalty_adjustments(updated_at);
 create index customer_favorites_user_id_idx on public.customer_favorites(user_id);
 create index customer_favorites_product_id_idx on public.customer_favorites(product_id);
+create index sale_payments_user_id_idx on public.sale_payments(user_id);
+create index sale_payments_sale_id_idx on public.sale_payments(sale_id);
+create index customer_credits_user_id_idx on public.customer_credits(user_id);
+create index customer_credits_customer_id_idx on public.customer_credits(customer_id);
 
 -- Product/customer uniqueness is scoped to each user and ignores soft-deleted rows.
 create unique index products_user_title_unique
@@ -170,6 +217,16 @@ begin
     if related_user_id is null or related_user_id <> new.user_id then
       raise exception 'Product does not belong to the same user';
     end if;
+  elsif tg_table_name = 'sale_payments' then
+    select user_id into related_user_id from public.sales where id = new.sale_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Sale does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'customer_credits' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
   end if;
   return new;
 end;
@@ -189,6 +246,14 @@ for each row execute function public.validate_bakery_owner_relationship();
 
 create trigger trg_customer_favorites_owner_relationship
 before insert or update on public.customer_favorites
+for each row execute function public.validate_bakery_owner_relationship();
+
+create trigger trg_sale_payments_owner_relationship
+before insert or update on public.sale_payments
+for each row execute function public.validate_bakery_owner_relationship();
+
+create trigger trg_customer_credits_owner_relationship
+before insert or update on public.customer_credits
 for each row execute function public.validate_bakery_owner_relationship();
 
 -- Automatically update timestamps on changed records.
@@ -222,6 +287,14 @@ create trigger trg_loyalty_adjustments_updated_at
 before update on public.loyalty_adjustments
 for each row execute function public.set_updated_at();
 
+create trigger trg_sale_payments_updated_at
+before update on public.sale_payments
+for each row execute function public.set_updated_at();
+
+create trigger trg_customer_credits_updated_at
+before update on public.customer_credits
+for each row execute function public.set_updated_at();
+
 -- Enable Row Level Security.
 alter table public.products enable row level security;
 alter table public.customers enable row level security;
@@ -229,6 +302,8 @@ alter table public.batches enable row level security;
 alter table public.sales enable row level security;
 alter table public.loyalty_adjustments enable row level security;
 alter table public.customer_favorites enable row level security;
+alter table public.sale_payments enable row level security;
+alter table public.customer_credits enable row level security;
 
 -- One authenticated account can access only its own rows.
 create policy products_owner_access
@@ -261,13 +336,24 @@ on public.customer_favorites for all to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+create policy sale_payments_owner_access
+on public.sale_payments for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy customer_credits_owner_access
+on public.customer_credits for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
 -- RLS policies only govern row visibility once a role already has base
 -- table privileges; without these grants every query is rejected before
 -- RLS is even evaluated (Postgres error 42501).
 grant usage on schema public to authenticated;
 grant select, insert, update, delete
   on public.products, public.customers, public.batches, public.sales,
-     public.loyalty_adjustments, public.customer_favorites
+     public.loyalty_adjustments, public.customer_favorites, public.sale_payments,
+     public.customer_credits
   to authenticated;
 
 -- Run this against an already-created database to add the "personal batch,
@@ -487,6 +573,192 @@ with check (auth.uid() = user_id);
 
 grant select, insert, update, delete on public.customer_favorites to authenticated;
 
+-- Run this against an already-created database to track a discount amount
+-- separately from the sale's charged `amount`, without re-running the
+-- whole script.
+alter table public.sales add column if not exists discount numeric(12,2) not null default 0;
+alter table public.sales drop constraint if exists sales_discount_nonnegative;
+alter table public.sales add constraint sales_discount_nonnegative check (discount >= 0);
+
+-- Run this against an already-created database to add installment/partial
+-- payments against an unpaid sale without re-running the whole script. The
+-- sale keeps its full `amount`; it flips to `paid = true` only once the sum
+-- of its payments covers that amount.
+create table if not exists public.sale_payments (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  sale_id uuid not null references public.sales(id),
+  amount numeric(12,2) not null,
+  payment_date date not null default current_date,
+  notes text,
+  updated_at timestamptz not null default now(),
+  is_deleted boolean not null default false,
+  constraint sale_payments_amount_positive check (amount > 0)
+);
+create index if not exists sale_payments_user_id_idx on public.sale_payments(user_id);
+create index if not exists sale_payments_sale_id_idx on public.sale_payments(sale_id);
+
+create or replace function public.validate_bakery_owner_relationship()
+returns trigger
+language plpgsql
+security invoker
+as $$
+declare
+  related_user_id uuid;
+begin
+  if tg_table_name = 'batches' then
+    select user_id into related_user_id from public.products where id = new.product_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Product does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'sales' then
+    select user_id into related_user_id from public.batches where id = new.batch_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Batch does not belong to the same user';
+    end if;
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'loyalty_adjustments' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'customer_favorites' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+    select user_id into related_user_id from public.products where id = new.product_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Product does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'sale_payments' then
+    select user_id into related_user_id from public.sales where id = new.sale_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Sale does not belong to the same user';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sale_payments_owner_relationship on public.sale_payments;
+create trigger trg_sale_payments_owner_relationship
+before insert or update on public.sale_payments
+for each row execute function public.validate_bakery_owner_relationship();
+
+drop trigger if exists trg_sale_payments_updated_at on public.sale_payments;
+create trigger trg_sale_payments_updated_at
+before update on public.sale_payments
+for each row execute function public.set_updated_at();
+
+alter table public.sale_payments enable row level security;
+
+drop policy if exists sale_payments_owner_access on public.sale_payments;
+create policy sale_payments_owner_access
+on public.sale_payments for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+grant select, insert, update, delete on public.sale_payments to authenticated;
+
+-- Run this against an already-created database to record which payment
+-- method (Cash, GCash, etc - configurable in Settings) was used, without
+-- re-running the whole script.
+alter table public.sales add column if not exists payment_method text;
+alter table public.sale_payments add column if not exists payment_method text;
+
+-- Run this against an already-created database to add a per-customer
+-- credit ledger (e.g. for a batch unit-price correction after a customer
+-- already paid at the old price) without re-running the whole script.
+create table if not exists public.customer_credits (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  customer_id uuid not null references public.customers(id),
+  amount numeric(12,2) not null,
+  reason text,
+  sale_id uuid references public.sales(id),
+  credit_date date not null default current_date,
+  updated_at timestamptz not null default now(),
+  is_deleted boolean not null default false,
+  constraint customer_credits_amount_nonzero check (amount <> 0)
+);
+create index if not exists customer_credits_user_id_idx on public.customer_credits(user_id);
+create index if not exists customer_credits_customer_id_idx on public.customer_credits(customer_id);
+
+create or replace function public.validate_bakery_owner_relationship()
+returns trigger
+language plpgsql
+security invoker
+as $$
+declare
+  related_user_id uuid;
+begin
+  if tg_table_name = 'batches' then
+    select user_id into related_user_id from public.products where id = new.product_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Product does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'sales' then
+    select user_id into related_user_id from public.batches where id = new.batch_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Batch does not belong to the same user';
+    end if;
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'loyalty_adjustments' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'customer_favorites' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+    select user_id into related_user_id from public.products where id = new.product_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Product does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'sale_payments' then
+    select user_id into related_user_id from public.sales where id = new.sale_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Sale does not belong to the same user';
+    end if;
+  elsif tg_table_name = 'customer_credits' then
+    select user_id into related_user_id from public.customers where id = new.customer_id;
+    if related_user_id is null or related_user_id <> new.user_id then
+      raise exception 'Customer does not belong to the same user';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_customer_credits_owner_relationship on public.customer_credits;
+create trigger trg_customer_credits_owner_relationship
+before insert or update on public.customer_credits
+for each row execute function public.validate_bakery_owner_relationship();
+
+drop trigger if exists trg_customer_credits_updated_at on public.customer_credits;
+create trigger trg_customer_credits_updated_at
+before update on public.customer_credits
+for each row execute function public.set_updated_at();
+
+alter table public.customer_credits enable row level security;
+
+drop policy if exists customer_credits_owner_access on public.customer_credits;
+create policy customer_credits_owner_access
+on public.customer_credits for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+grant select, insert, update, delete on public.customer_credits to authenticated;
+
 -- Realtime publication.
 -- If any of these tables are already in the publication, run the statement
 -- individually and ignore the "already a member" error.
@@ -496,6 +768,8 @@ alter publication supabase_realtime add table public.batches;
 alter publication supabase_realtime add table public.sales;
 alter publication supabase_realtime add table public.loyalty_adjustments;
 alter publication supabase_realtime add table public.customer_favorites;
+alter publication supabase_realtime add table public.sale_payments;
+alter publication supabase_realtime add table public.customer_credits;
 
 -- Optional convenience view for the web dashboard. The Flutter app can also
 -- calculate analytics locally from its repository lists.

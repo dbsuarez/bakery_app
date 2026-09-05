@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:provider/provider.dart';
 
+import '../../analytics/customer_calculations.dart';
 import '../../app_state.dart';
 import '../../models/batch.dart';
 import '../../models/product.dart';
@@ -79,7 +80,10 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
     for (final s in selectedUnpaid) {
       byCustomer.putIfAbsent(s.customerId, () => []).add(s);
     }
-    final total = selectedUnpaid.fold<double>(0, (sum, s) => sum + s.amount);
+    double remainingFor(Sale s) =>
+        saleRemainingAmount(s, appState.salePayments);
+    final total =
+        selectedUnpaid.fold<double>(0, (sum, s) => sum + remainingFor(s));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Report')),
@@ -169,14 +173,14 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                                   subtitle: Text(
                                     '${appDateFormat.format(s.saleDate)} · Qty ${s.quantity}',
                                   ),
-                                  trailing: Text(_currency.format(s.amount)),
+                                  trailing: Text(_currency.format(remainingFor(s))),
                                 ),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: Text(
-                                    'Subtotal: ${_currency.format(entry.value.fold<double>(0, (sum, s) => sum + s.amount))}',
+                                    'Subtotal: ${_currency.format(entry.value.fold<double>(0, (sum, s) => sum + remainingFor(s)))}',
                                     style: Theme.of(context).textTheme.labelMedium,
                                   ),
                                 ),

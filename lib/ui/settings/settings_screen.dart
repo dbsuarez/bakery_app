@@ -116,6 +116,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () => _editCustomerGroups(context, business),
             ),
           ),
+          Consumer<BusinessSettingsController>(
+            builder: (context, business, _) => ListTile(
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('Payment methods'),
+              subtitle: Text(business.paymentMethods.join(', ')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _editPaymentMethods(context, business),
+            ),
+          ),
           ListTile(
             leading: const Icon(Icons.bakery_dining_outlined),
             title: const Text('Products'),
@@ -653,6 +662,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (result != true) return;
     await business.setCustomerGroups(groups);
+  }
+
+  Future<void> _editPaymentMethods(
+    BuildContext context,
+    BusinessSettingsController business,
+  ) async {
+    var methods = List<String>.from(business.paymentMethods);
+    final newMethodController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void addMethod() {
+            final value = newMethodController.text.trim();
+            if (value.isEmpty || methods.contains(value)) return;
+            setDialogState(() {
+              methods = [...methods, value];
+              newMethodController.clear();
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('Payment methods'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Shown as choices whenever a payment is recorded.',
+                  ),
+                  const SizedBox(height: 12),
+                  if (methods.isEmpty)
+                    const Text('No methods yet.')
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final m in methods)
+                          Chip(
+                            label: Text(m),
+                            onDeleted: () => setDialogState(
+                                () => methods = methods.where((x) => x != m).toList()),
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: newMethodController,
+                          decoration:
+                              const InputDecoration(labelText: 'New method name'),
+                          onSubmitted: (_) => addMethod(),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: addMethod,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (result != true) return;
+    await business.setPaymentMethods(methods);
   }
 
   Future<void> _exportBackup(BuildContext context) async {

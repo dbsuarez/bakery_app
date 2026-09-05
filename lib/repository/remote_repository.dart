@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/batch.dart' as m;
 import '../models/customer.dart' as m;
+import '../models/customer_credit.dart' as m;
 import '../models/customer_favorite.dart' as m;
 import '../models/loyalty_adjustment.dart' as m;
 import '../models/product.dart' as m;
@@ -56,6 +57,8 @@ class RemoteRepository implements BakeryRepository {
   final _batchIds = _IdMapper();
   final _saleIds = _IdMapper();
   final _loyaltyAdjustmentIds = _IdMapper();
+  final _salePaymentIds = _IdMapper();
+  final _customerCreditIds = _IdMapper();
 
   RemoteRepository(this.client);
 
@@ -112,10 +115,12 @@ class RemoteRepository implements BakeryRepository {
         saleDate: DateTime.parse(row['sale_date'] as String),
         quantity: row['quantity'] as int,
         amount: (row['amount'] as num).toDouble(),
+        discount: (row['discount'] as num?)?.toDouble() ?? 0,
         paid: row['paid'] as bool,
         datePaid: row['date_paid'] == null
             ? null
             : DateTime.parse(row['date_paid'] as String),
+        paymentMethod: row['payment_method'] as String?,
         saleType: m.SaleType.fromValue(row['sale_type'] as String),
         notes: row['notes'] as String?,
         updatedAt: DateTime.parse(row['updated_at'] as String),
@@ -132,6 +137,36 @@ class RemoteRepository implements BakeryRepository {
         points: row['points'] as int,
         reason: row['reason'] as String?,
         adjustmentDate: DateTime.parse(row['adjustment_date'] as String),
+        updatedAt: DateTime.parse(row['updated_at'] as String),
+        isDirty: false,
+        isDeleted: row['is_deleted'] as bool,
+      );
+
+  m.SalePayment _salePaymentFromRow(Map<String, dynamic> row) =>
+      m.SalePayment(
+        id: _salePaymentIds.toInt(row['id'] as String),
+        remoteId: row['id'] as String,
+        saleId: _saleIds.toInt(row['sale_id'] as String),
+        amount: (row['amount'] as num).toDouble(),
+        paymentDate: DateTime.parse(row['payment_date'] as String),
+        paymentMethod: row['payment_method'] as String?,
+        notes: row['notes'] as String?,
+        updatedAt: DateTime.parse(row['updated_at'] as String),
+        isDirty: false,
+        isDeleted: row['is_deleted'] as bool,
+      );
+
+  m.CustomerCredit _customerCreditFromRow(Map<String, dynamic> row) =>
+      m.CustomerCredit(
+        id: _customerCreditIds.toInt(row['id'] as String),
+        remoteId: row['id'] as String,
+        customerId: _customerIds.toInt(row['customer_id'] as String),
+        amount: (row['amount'] as num).toDouble(),
+        reason: row['reason'] as String?,
+        saleId: row['sale_id'] == null
+            ? null
+            : _saleIds.toInt(row['sale_id'] as String),
+        creditDate: DateTime.parse(row['credit_date'] as String),
         updatedAt: DateTime.parse(row['updated_at'] as String),
         isDirty: false,
         isDeleted: row['is_deleted'] as bool,
@@ -211,6 +246,18 @@ class RemoteRepository implements BakeryRepository {
     return _watchTable('loyalty_adjustments', 'adjustment_date',
             ascending: false)
         .map((rows) => rows.map(_loyaltyAdjustmentFromRow).toList());
+  }
+
+  @override
+  Stream<List<m.SalePayment>> watchSalePayments() {
+    return _watchTable('sale_payments', 'payment_date', ascending: false)
+        .map((rows) => rows.map(_salePaymentFromRow).toList());
+  }
+
+  @override
+  Stream<List<m.CustomerCredit>> watchCustomerCredits() {
+    return _watchTable('customer_credits', 'credit_date', ascending: false)
+        .map((rows) => rows.map(_customerCreditFromRow).toList());
   }
 
   @override
@@ -318,8 +365,10 @@ class RemoteRepository implements BakeryRepository {
       'sale_date': _dateOnly(sale.saleDate),
       'quantity': sale.quantity,
       'amount': sale.amount,
+      'discount': sale.discount,
       'paid': sale.paid,
       'date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
+      'payment_method': sale.paymentMethod,
       'sale_type': sale.saleType.value,
       'notes': sale.notes,
     });
@@ -336,8 +385,10 @@ class RemoteRepository implements BakeryRepository {
       'sale_date': _dateOnly(sale.saleDate),
       'quantity': sale.quantity,
       'amount': sale.amount,
+      'discount': sale.discount,
       'paid': sale.paid,
       'date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
+      'payment_method': sale.paymentMethod,
       'sale_type': sale.saleType.value,
       'notes': sale.notes,
     }).eq('id', _saleIds.toUuid(sale.id));
@@ -369,19 +420,64 @@ class RemoteRepository implements BakeryRepository {
           'sale_date': now,
           'quantity': entry.quantity,
           'amount': entry.amount,
+          'discount': entry.discount,
           'paid': entry.paid,
           'date_paid':
               entry.datePaid == null ? null : _dateOnly(entry.datePaid!),
+          'payment_method': entry.paymentMethod,
           'notes': entry.notes,
         },
     ]);
   }
 
   @override
-  Future<void> markSalePaid(int saleId, DateTime paymentDate) async {
+  Future<void> addSalePayment(m.SalePayment payment) async {
+    if (payment.amount <= 0) {
+      throw ArgumentError('Payment amount must be positive.');
+    }
+    final saleUuid = _saleIds.toUuid(payment.saleId);
+    await client.from('sale_payments').insert({
+      'sale_id': saleUuid,
+      'amount': payment.amount,
+      'payment_date': _dateOnly(payment.paymentDate),
+      'payment_method': payment.paymentMethod,
+      'notes': payment.notes,
+    });
+
+    final sale = await client
+        .from('sales')
+        .select('amount')
+        .eq('id', saleUuid)
+        .single();
+    final saleAmount = (sale['amount'] as num).toDouble();
+    final existingPayments = await client
+        .from('sale_payments')
+        .select('amount')
+        .eq('sale_id', saleUuid)
+        .eq('is_deleted', false);
+    final totalPaid = existingPayments.fold<double>(
+        0, (sum, row) => sum + (row['amount'] as num).toDouble());
+    // Small epsilon so floating-point rounding never leaves a fully-paid
+    // sale stuck open by a fraction of a centavo.
+    if (totalPaid >= saleAmount - 0.01) {
+      await client.from('sales').update({
+        'paid': true,
+        'date_paid': _dateOnly(payment.paymentDate),
+        'payment_method': payment.paymentMethod,
+      }).eq('id', saleUuid);
+    }
+  }
+
+  @override
+  Future<void> markSalePaid(
+    int saleId,
+    DateTime paymentDate, {
+    String? paymentMethod,
+  }) async {
     await client.from('sales').update({
       'paid': true,
       'date_paid': _dateOnly(paymentDate),
+      'payment_method': paymentMethod,
     }).eq('id', _saleIds.toUuid(saleId));
   }
 
@@ -444,6 +540,58 @@ class RemoteRepository implements BakeryRepository {
   }
 
   @override
+  Future<void> addCustomerCredit(m.CustomerCredit credit) async {
+    await client.from('customer_credits').insert({
+      'customer_id': _customerIds.toUuid(credit.customerId),
+      'amount': credit.amount,
+      'reason': credit.reason,
+      'sale_id': credit.saleId == null ? null : _saleIds.toUuid(credit.saleId!),
+      'credit_date': _dateOnly(credit.creditDate),
+    });
+  }
+
+  @override
+  Future<void> reconcileBatchUnitPrice(
+    int batchId,
+    double oldUnitPrice,
+    double newUnitPrice,
+  ) async {
+    final batchUuid = _batchIds.toUuid(batchId);
+    final rows = await client
+        .from('sales')
+        .select()
+        .eq('batch_id', batchUuid)
+        .eq('is_deleted', false)
+        .eq('sale_type', m.SaleType.customerSale.value);
+    for (final row in rows) {
+      final saleUuid = row['id'] as String;
+      final quantity = row['quantity'] as int;
+      final discount = (row['discount'] as num?)?.toDouble() ?? 0;
+      final oldAmount = (row['amount'] as num).toDouble();
+      final paid = row['paid'] as bool;
+      final rawNewAmount = quantity * newUnitPrice - discount;
+      final newAmount = rawNewAmount < 0 ? 0.0 : rawNewAmount;
+
+      if (paid) {
+        final diff = oldAmount - newAmount;
+        if (diff.abs() > 0.005) {
+          await client.from('customer_credits').insert({
+            'customer_id': row['customer_id'],
+            'amount': diff,
+            'reason': 'Batch unit price corrected from '
+                '₱${oldUnitPrice.toStringAsFixed(2)} to '
+                '₱${newUnitPrice.toStringAsFixed(2)}',
+            'sale_id': saleUuid,
+          });
+        }
+      }
+      await client
+          .from('sales')
+          .update({'amount': newAmount}).eq('id', saleUuid);
+    }
+  }
+
+  @override
   Future<void> mergeCustomers(int fromCustomerId, int intoCustomerId) async {
     final fromUuid = _customerIds.toUuid(fromCustomerId);
     final intoUuid = _customerIds.toUuid(intoCustomerId);
@@ -453,6 +601,15 @@ class RemoteRepository implements BakeryRepository {
     await client
         .from('loyalty_adjustments')
         .update({'customer_id': intoUuid}).eq('customer_id', fromUuid);
+    // Best-effort: an older database that predates this table shouldn't
+    // block the rest of the merge from completing.
+    try {
+      await client
+          .from('customer_credits')
+          .update({'customer_id': intoUuid}).eq('customer_id', fromUuid);
+    } catch (_) {
+      // Ignored - see comment above.
+    }
 
     // customer_favorites has a (customer_id, product_id) primary key, so a
     // plain update could collide with a favorite the target already has -

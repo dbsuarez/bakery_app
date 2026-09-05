@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../analytics/customer_calculations.dart';
 import '../app_state.dart';
 import '../models/sale.dart';
 import '../utils/app_date_format.dart';
@@ -57,7 +58,10 @@ Future<Uint8List> buildUnpaidReportPdf(
       return nameA.toLowerCase().compareTo(nameB.toLowerCase());
     });
 
-  final grandTotal = unpaidSales.fold<double>(0, (sum, s) => sum + s.amount);
+  double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
+
+  final grandTotal =
+      unpaidSales.fold<double>(0, (sum, s) => sum + remainingFor(s));
 
   String productTitle(Sale s) {
     final batch = state.batchById(s.batchId);
@@ -188,7 +192,8 @@ Future<Uint8List> buildUnpaidReportPdf(
                       align: pw.TextAlign.right,
                     ),
                     _cell('${s.quantity}', align: pw.TextAlign.right),
-                    _cell(_currency.format(s.amount), align: pw.TextAlign.right),
+                    _cell(_currency.format(remainingFor(s)),
+                        align: pw.TextAlign.right),
                   ]),
                 if (byCustomer[customerId]!.length > 1)
                   pw.TableRow(children: [
@@ -198,7 +203,7 @@ Future<Uint8List> buildUnpaidReportPdf(
                     _cell('Subtotal', bold: true, align: pw.TextAlign.right),
                     _cell(
                       _currency.format(byCustomer[customerId]!
-                          .fold<double>(0, (sum, s) => sum + s.amount)),
+                          .fold<double>(0, (sum, s) => sum + remainingFor(s))),
                       bold: true,
                       align: pw.TextAlign.right,
                     ),

@@ -8,9 +8,11 @@ import '../../app_state.dart';
 import '../../celebration/celebration_controller.dart';
 import '../../models/sale.dart';
 import '../../repository/bakery_repository.dart';
+import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
 import '../../utils/guarded_action.dart';
 import '../batch_add_transactions/batch_add_transactions_screen.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 import 'batch_form_screen.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
@@ -87,19 +89,26 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   if (product?.imageUrl != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: product!.imageUrl!,
-                          height: 140,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorWidget: (context, url, error) => Container(
+                      child: GestureDetector(
+                        onTap: () => showFullscreenImage(
+                          context,
+                          product.imageUrl!,
+                          title: product.title,
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(
+                            imageUrl: product!.imageUrl!,
                             height: 140,
-                            color: Colors.red.shade50,
-                            alignment: Alignment.center,
-                            child: Icon(Icons.broken_image_outlined,
-                                size: 32, color: Colors.red.shade400),
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorWidget: (context, url, error) => Container(
+                              height: 140,
+                              color: Colors.red.shade50,
+                              alignment: Alignment.center,
+                              child: Icon(Icons.broken_image_outlined,
+                                  size: 32, color: Colors.red.shade400),
+                            ),
                           ),
                         ),
                       ),
@@ -369,8 +378,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         TextEditingController(text: sale.quantity.toString());
     final amountController =
         TextEditingController(text: sale.amount.toStringAsFixed(2));
+    final discountController =
+        TextEditingController(text: sale.discount.toStringAsFixed(2));
     var saleType = sale.saleType;
     var paid = sale.paid;
+    final paymentMethods = context.read<BusinessSettingsController>().paymentMethods;
+    var paymentMethod = sale.paymentMethod ??
+        (paymentMethods.isEmpty ? null : paymentMethods.first);
 
     final action = await showDialog<String>(
       context: context,
@@ -410,12 +424,35 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
               ),
+              if (saleType == SaleType.customerSale)
+                TextField(
+                  controller: discountController,
+                  decoration:
+                      const InputDecoration(labelText: 'Discount (optional)'),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Paid'),
                 value: paid,
-                onChanged: (v) => setDialogState(() => paid = v),
+                onChanged: (v) => setDialogState(() {
+                  paid = v;
+                  if (v && paymentMethod == null && paymentMethods.isNotEmpty) {
+                    paymentMethod = paymentMethods.first;
+                  }
+                }),
               ),
+              if (paid && paymentMethods.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: paymentMethod,
+                  decoration: const InputDecoration(labelText: 'Payment method'),
+                  items: [
+                    for (final m in paymentMethods)
+                      DropdownMenuItem(value: m, child: Text(m)),
+                  ],
+                  onChanged: (v) => setDialogState(() => paymentMethod = v),
+                ),
             ],
           ),
           actions: [
@@ -475,6 +512,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       );
       return;
     }
+    final discount = saleType == SaleType.customerSale
+        ? (double.tryParse(discountController.text) ?? 0)
+        : 0.0;
 
     await runGuarded(
         context,
@@ -487,8 +527,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               saleDate: sale.saleDate,
               quantity: quantity,
               amount: amount,
+              discount: discount,
               paid: paid,
               datePaid: paid ? (sale.datePaid ?? DateTime.now()) : null,
+              paymentMethod: paid ? paymentMethod : null,
               saleType: saleType,
               notes: sale.notes,
               updatedAt: DateTime.now(),

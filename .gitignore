@@ -55,3 +55,5 @@ dart_define.json
 docs/bakery_backup_*.json
 docs/sales_report_*.csv
 docs/unpaid_report_*.pdf
+docs/statement_*.pdf
+docs/unpaid_statement_*.pdf
