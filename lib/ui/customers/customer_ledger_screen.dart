@@ -19,6 +19,7 @@ import '../../utils/app_date_format.dart';
 import '../../utils/guarded_action.dart';
 import '../single_sale/single_sale_screen.dart';
 import '../widgets/product_avatar.dart';
+import '../widgets/qr_quick_view.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
@@ -36,6 +37,68 @@ String _saleTypeLabel(String value) {
     default:
       return value;
   }
+}
+
+/// Shows a payment date + method picker in one dialog. Returns null if
+/// cancelled.
+Future<(DateTime date, String? method)?> pickPaymentDateAndMethod(
+  BuildContext context, {
+  DateTime? initialDate,
+  String? helpText,
+}) async {
+  final methods = context.read<BusinessSettingsController>().paymentMethods;
+  var date = initialDate ?? DateTime.now();
+  String? method = methods.isEmpty ? null : methods.first;
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Text(helpText ?? 'Payment details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Date: ${appDateFormat.format(date)}'),
+              trailing: const Icon(Icons.calendar_today),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: date,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                );
+                if (picked != null) setDialogState(() => date = picked);
+              },
+            ),
+            if (methods.isNotEmpty)
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                decoration: const InputDecoration(labelText: 'Payment method'),
+                items: [
+                  for (final m in methods)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) => setDialogState(() => method = v),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (confirmed != true) return null;
+  return (date, method);
 }
 
 class CustomerLedgerScreen extends StatelessWidget {
@@ -92,6 +155,11 @@ class CustomerLedgerScreen extends StatelessWidget {
               onPressed: () =>
                   _redeemPoints(context, appState, business, pointsByCategory),
             ),
+          IconButton(
+            icon: const Icon(Icons.qr_code_2),
+            tooltip: 'Show payment QR',
+            onPressed: () => showQrQuickView(context),
+          ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf_outlined),
             tooltip: 'Share statement (PDF)',
@@ -252,60 +320,12 @@ class CustomerLedgerScreen extends StatelessWidget {
             _FavoritesSection(customerId: customerId),
           ],
           const SizedBox(height: 16),
-          Text('Transaction history (${sales.length})',
-              style: Theme.of(context).textTheme.titleMedium),
-          if (sales.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('No transactions yet.'),
-            ),
-          for (final sale in sales)
-            Builder(builder: (context) {
-              final batch = appState.batchById(sale.batchId);
-              final product =
-                  batch == null ? null : appState.productById(batch.productId);
-              final isCustomerSale = sale.saleType == SaleType.customerSale;
-              final paidSoFar = isCustomerSale
-                  ? salePaidAmount(sale.id, appState.salePayments)
-                  : 0.0;
-              final remaining = isCustomerSale
-                  ? saleRemainingAmount(sale, appState.salePayments)
-                  : sale.amount;
-              return ListTile(
-                leading: ProductAvatar(imageUrl: product?.imageUrl),
-                title: Text(
-                  '${product?.title ?? ''} × ${sale.quantity}',
-                ),
-                subtitle: Text(
-                  (!sale.paid && isCustomerSale && paidSoFar > 0
-                          ? '${appDateFormat.format(sale.saleDate)} · '
-                              '${_currency.format(paidSoFar)} of ${_currency.format(sale.amount)} paid'
-                          : '${appDateFormat.format(sale.saleDate)} · ${_currency.format(sale.amount)}') +
-                      (sale.discount > 0
-                          ? ' · ${_currency.format(sale.discount)} discount'
-                          : ''),
-                ),
-                trailing: !isCustomerSale
-                    ? Chip(
-                        label: Text(_saleTypeLabel(sale.saleType.value)),
-                        labelStyle: Theme.of(context).textTheme.labelSmall,
-                        labelPadding:
-                            const EdgeInsets.symmetric(horizontal: 6),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      )
-                    : sale.paid
-                        ? Switch(
-                            value: true,
-                            onChanged: (v) => _togglePaid(context, sale.id, v),
-                          )
-                        : TextButton(
-                            onPressed: () =>
-                                _recordPayment(context, sale, remaining),
-                            child: Text(_currency.format(remaining)),
-                          ),
-              );
-            }),
+          _TransactionHistorySection(
+            customerId: customerId,
+            sales: sales,
+            onTogglePaid: _togglePaid,
+            onRecordPayment: _recordPayment,
+          ),
         ],
       ),
     );
@@ -814,6 +834,7 @@ class CustomerLedgerScreen extends StatelessWidget {
         appState,
         customer,
         businessName: business.name,
+        enabledQrSlots: business.enabledQrSlots,
         brandColor: PdfColor.fromInt(seedColor.toARGB32()),
       );
     } catch (e) {
@@ -1019,72 +1040,10 @@ class CustomerLedgerScreen extends StatelessWidget {
     }
   }
 
-  /// Shows a payment date + method picker in one dialog. Returns null if
-  /// cancelled.
-  Future<(DateTime date, String? method)?> _pickPaymentDateAndMethod(
-    BuildContext context, {
-    DateTime? initialDate,
-    String? helpText,
-  }) async {
-    final methods = context.read<BusinessSettingsController>().paymentMethods;
-    var date = initialDate ?? DateTime.now();
-    String? method = methods.isEmpty ? null : methods.first;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(helpText ?? 'Payment details'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Date: ${appDateFormat.format(date)}'),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: date,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setDialogState(() => date = picked);
-                },
-              ),
-              if (methods.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  initialValue: method,
-                  decoration: const InputDecoration(labelText: 'Payment method'),
-                  items: [
-                    for (final m in methods)
-                      DropdownMenuItem(value: m, child: Text(m)),
-                  ],
-                  onChanged: (v) => setDialogState(() => method = v),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) return null;
-    return (date, method);
-  }
-
   Future<void> _togglePaid(BuildContext context, int saleId, bool paid) async {
     final repo = context.read<BakeryRepository>();
     if (paid) {
-      final picked = await _pickPaymentDateAndMethod(context);
+      final picked = await pickPaymentDateAndMethod(context);
       if (picked == null || !context.mounted) return;
       await runGuarded(
         context,
@@ -1239,7 +1198,7 @@ class CustomerLedgerScreen extends StatelessWidget {
     final totalRemaining = unpaid.fold<double>(
         0, (sum, s) => sum + saleRemainingAmount(s, appState.salePayments));
 
-    final picked = await _pickPaymentDateAndMethod(
+    final picked = await pickPaymentDateAndMethod(
       context,
       helpText: 'Payment for all ${unpaid.length} transaction(s)',
     );
@@ -1348,6 +1307,347 @@ class CustomerLedgerScreen extends StatelessWidget {
             creditDate: DateTime.now(),
             updatedAt: DateTime.now(),
           )),
+    );
+  }
+}
+
+class _TransactionHistorySection extends StatefulWidget {
+  final int customerId;
+  final List<Sale> sales;
+  final void Function(BuildContext, int saleId, bool paid) onTogglePaid;
+  final void Function(BuildContext, Sale sale, double remaining) onRecordPayment;
+
+  const _TransactionHistorySection({
+    required this.customerId,
+    required this.sales,
+    required this.onTogglePaid,
+    required this.onRecordPayment,
+  });
+
+  @override
+  State<_TransactionHistorySection> createState() =>
+      _TransactionHistorySectionState();
+}
+
+class _TransactionHistorySectionState
+    extends State<_TransactionHistorySection> {
+  bool _selectMode = false;
+  final _selected = <int>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final sales = widget.sales;
+    final selectableIds = sales
+        .where((s) => s.saleType == SaleType.customerSale && !s.paid)
+        .map((s) => s.id)
+        .toSet();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text('Transaction history (${sales.length})',
+                  style: Theme.of(context).textTheme.titleMedium),
+            ),
+            if (selectableIds.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => setState(() {
+                  _selectMode = !_selectMode;
+                  _selected.clear();
+                }),
+                icon: Icon(_selectMode ? Icons.close : Icons.checklist),
+                label: Text(_selectMode ? 'Cancel' : 'Select'),
+              ),
+          ],
+        ),
+        if (sales.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No transactions yet.'),
+          ),
+        for (final sale in sales)
+          Builder(builder: (context) {
+            final batch = appState.batchById(sale.batchId);
+            final product =
+                batch == null ? null : appState.productById(batch.productId);
+            final isCustomerSale = sale.saleType == SaleType.customerSale;
+            final paidSoFar = isCustomerSale
+                ? salePaidAmount(sale.id, appState.salePayments)
+                : 0.0;
+            final remaining = isCustomerSale
+                ? saleRemainingAmount(sale, appState.salePayments)
+                : sale.amount;
+            final selectable = selectableIds.contains(sale.id);
+            return ListTile(
+              leading: _selectMode && selectable
+                  ? Checkbox(
+                      value: _selected.contains(sale.id),
+                      onChanged: (v) => setState(() {
+                        if (v == true) {
+                          _selected.add(sale.id);
+                        } else {
+                          _selected.remove(sale.id);
+                        }
+                      }),
+                    )
+                  : ProductAvatar(imageUrl: product?.imageUrl),
+              title: Text(
+                '${product?.title ?? ''} × ${sale.quantity}',
+              ),
+              subtitle: Text(
+                (!sale.paid && isCustomerSale && paidSoFar > 0
+                        ? '${appDateFormat.format(sale.saleDate)} · '
+                            '${_currency.format(paidSoFar)} of ${_currency.format(sale.amount)} paid'
+                        : '${appDateFormat.format(sale.saleDate)} · ${_currency.format(sale.amount)}') +
+                    (sale.discount > 0
+                        ? ' · ${_currency.format(sale.discount)} discount'
+                        : ''),
+              ),
+              trailing: !isCustomerSale
+                  ? Chip(
+                      label: Text(_saleTypeLabel(sale.saleType.value)),
+                      labelStyle: Theme.of(context).textTheme.labelSmall,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    )
+                  : sale.paid
+                      ? Switch(
+                          value: true,
+                          onChanged: (v) =>
+                              widget.onTogglePaid(context, sale.id, v),
+                        )
+                      : TextButton(
+                          onPressed: () =>
+                              widget.onRecordPayment(context, sale, remaining),
+                          child: Text(_currency.format(remaining)),
+                        ),
+              onLongPress: (_selectMode || sale.paid)
+                  ? null
+                  : () => _showSaleActions(context, sale),
+            );
+          }),
+        if (_selectMode && _selected.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: FilledButton.icon(
+              icon: const Icon(Icons.checklist),
+              label: Text('Mark ${_selected.length} selected as paid'),
+              onPressed: () => _markSelectedPaid(context),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _markSelectedPaid(BuildContext context) async {
+    final picked = await pickPaymentDateAndMethod(
+      context,
+      helpText: 'Payment for ${_selected.length} selected transaction(s)',
+    );
+    if (picked == null || !context.mounted) return;
+    final repo = context.read<BakeryRepository>();
+    final ids = List<int>.from(_selected);
+    await runGuarded(context, () async {
+      for (final id in ids) {
+        await repo.markSalePaid(id, picked.$1, paymentMethod: picked.$2);
+      }
+    });
+    setState(() {
+      _selectMode = false;
+      _selected.clear();
+    });
+  }
+
+  Future<void> _showSaleActions(BuildContext context, Sale sale) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (sale.saleType == SaleType.customerSale)
+              ListTile(
+                leading: const Icon(Icons.swap_horiz),
+                title: const Text('Move to another customer'),
+                onTap: () => Navigator.of(context).pop('move'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.undo),
+              title: const Text('Reverse (undo) this transaction'),
+              subtitle: const Text('Returns its quantity to the batch'),
+              onTap: () => Navigator.of(context).pop('reverse'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'move') {
+      await _moveToCustomer(context, sale);
+    } else if (action == 'reverse' && context.mounted) {
+      await _reverseSale(context, sale);
+    }
+  }
+
+  Future<void> _moveToCustomer(BuildContext context, Sale sale) async {
+    final targetId = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (_) => _PickCustomerScreen(excludeCustomerId: sale.customerId),
+      ),
+    );
+    if (targetId == null || !context.mounted) return;
+
+    final appState = context.read<AppState>();
+    final repo = context.read<BakeryRepository>();
+    // If the target customer already has an unpaid entry for this same
+    // batch + sale type, fold this one into it instead of leaving two
+    // separate unpaid lines for the same product.
+    final existingTarget = appState.sales
+        .where((s) =>
+            s.id != sale.id &&
+            s.customerId == targetId &&
+            s.batchId == sale.batchId &&
+            s.saleType == sale.saleType &&
+            !s.paid &&
+            !s.isDeleted)
+        .toList();
+
+    await runGuarded(context, () async {
+      if (existingTarget.length == 1) {
+        final merge = existingTarget.first;
+        await repo.updateSale(Sale(
+          id: merge.id,
+          remoteId: merge.remoteId,
+          legacyId: merge.legacyId,
+          batchId: merge.batchId,
+          customerId: merge.customerId,
+          saleDate: merge.saleDate,
+          quantity: merge.quantity + sale.quantity,
+          amount: merge.amount + sale.amount,
+          discount: merge.discount + sale.discount,
+          paid: false,
+          datePaid: null,
+          saleType: merge.saleType,
+          notes: merge.notes,
+          updatedAt: DateTime.now(),
+        ));
+        // The moved sale's quantity now lives in the merged row above -
+        // deleting it frees its own quantity back to "available" in the
+        // batch, which nets to zero since the merge just re-added the same
+        // amount under the target customer.
+        await repo.deleteSale(sale.id);
+      } else {
+        await repo.updateSale(Sale(
+          id: sale.id,
+          remoteId: sale.remoteId,
+          legacyId: sale.legacyId,
+          batchId: sale.batchId,
+          customerId: targetId,
+          saleDate: sale.saleDate,
+          quantity: sale.quantity,
+          amount: sale.amount,
+          discount: sale.discount,
+          paid: sale.paid,
+          datePaid: sale.datePaid,
+          paymentMethod: sale.paymentMethod,
+          saleType: sale.saleType,
+          notes: sale.notes,
+          updatedAt: DateTime.now(),
+        ));
+      }
+    });
+  }
+
+  Future<void> _reverseSale(BuildContext context, Sale sale) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reverse this transaction?'),
+        content: const Text(
+          'This fully undoes it - its quantity goes back to the batch\'s '
+          'available stock. This cannot be undone from the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reverse'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runGuarded(
+        context, () => context.read<BakeryRepository>().deleteSale(sale.id));
+  }
+}
+
+class _PickCustomerScreen extends StatefulWidget {
+  final int excludeCustomerId;
+  const _PickCustomerScreen({required this.excludeCustomerId});
+
+  @override
+  State<_PickCustomerScreen> createState() => _PickCustomerScreenState();
+}
+
+class _PickCustomerScreenState extends State<_PickCustomerScreen> {
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final customers = appState.customers
+        .where((c) =>
+            c.id != widget.excludeCustomerId &&
+            !c.isArchived &&
+            c.name.toLowerCase().contains(_search.toLowerCase()))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Move to customer')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search customer...',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: customers.length,
+              itemBuilder: (context, index) {
+                final c = customers[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    child: Text(
+                        c.name.isNotEmpty ? c.name[0].toUpperCase() : '?'),
+                  ),
+                  title: Text(c.name),
+                  onTap: () => Navigator.of(context).pop(c.id),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

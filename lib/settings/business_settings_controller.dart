@@ -16,9 +16,11 @@ class BusinessSettingsController extends ChangeNotifier {
   static const _kSameDayBonusStartDateKey = 'same_day_bonus_start_date';
   static const _kCustomerGroupsKey = 'customer_groups';
   static const _kPaymentMethodsKey = 'payment_methods';
+  static const _kEnabledQrSlotsKey = 'enabled_qr_slots';
 
   static const defaultName = 'My Bakery';
   static const defaultPaymentMethods = ['Cash', 'AUB', 'Maribank', 'GCash'];
+  static const defaultEnabledQrSlots = [1, 2, 3];
   static const defaultPesosPerPoint = 10.0; // ₱10 spent = 1 point earned
   static const defaultSameDayBonusPercent = 50.0;
   static const defaultRedeemPesosPerPoint = 1.0; // 1 point = ₱1 when redeeming
@@ -34,6 +36,7 @@ class BusinessSettingsController extends ChangeNotifier {
   DateTime _sameDayBonusStartDate = defaultSameDayBonusStartDate;
   List<String> _customerGroups = [];
   List<String> _paymentMethods = List.of(defaultPaymentMethods);
+  List<int> _enabledQrSlots = List.of(defaultEnabledQrSlots);
 
   String get name => _name;
   double get pesosPerPoint => _pesosPerPoint;
@@ -42,6 +45,7 @@ class BusinessSettingsController extends ChangeNotifier {
   DateTime get sameDayBonusStartDate => _sameDayBonusStartDate;
   List<String> get customerGroups => List.unmodifiable(_customerGroups);
   List<String> get paymentMethods => List.unmodifiable(_paymentMethods);
+  List<int> get enabledQrSlots => List.unmodifiable(_enabledQrSlots);
 
   StreamSubscription<AuthState>? _authSub;
 
@@ -68,6 +72,7 @@ class BusinessSettingsController extends ChangeNotifier {
       final bonusStartVal = meta?[_kSameDayBonusStartDateKey];
       final customerGroupsVal = meta?[_kCustomerGroupsKey];
       final paymentMethodsVal = meta?[_kPaymentMethodsKey];
+      final enabledQrSlotsVal = meta?[_kEnabledQrSlotsKey];
       final resolvedName =
           (nameVal is String && nameVal.trim().isNotEmpty) ? nameVal : defaultName;
       final resolvedPpp =
@@ -87,13 +92,17 @@ class BusinessSettingsController extends ChangeNotifier {
       final resolvedPaymentMethods = paymentMethodsVal is List
           ? paymentMethodsVal.whereType<String>().toList()
           : List.of(defaultPaymentMethods);
+      final resolvedEnabledQrSlots = enabledQrSlotsVal is List
+          ? enabledQrSlotsVal.whereType<num>().map((n) => n.toInt()).toList()
+          : List.of(defaultEnabledQrSlots);
       if (resolvedName != _name ||
           resolvedPpp != _pesosPerPoint ||
           resolvedBonus != _sameDayBonusPercent ||
           resolvedRedeemPpp != _redeemPesosPerPoint ||
           resolvedBonusStart != _sameDayBonusStartDate ||
           !listEquals(resolvedCustomerGroups, _customerGroups) ||
-          !listEquals(resolvedPaymentMethods, _paymentMethods)) {
+          !listEquals(resolvedPaymentMethods, _paymentMethods) ||
+          !listEquals(resolvedEnabledQrSlots, _enabledQrSlots)) {
         _name = resolvedName;
         _pesosPerPoint = resolvedPpp;
         _sameDayBonusPercent = resolvedBonus;
@@ -101,6 +110,7 @@ class BusinessSettingsController extends ChangeNotifier {
         _sameDayBonusStartDate = resolvedBonusStart;
         _customerGroups = resolvedCustomerGroups;
         _paymentMethods = resolvedPaymentMethods;
+        _enabledQrSlots = resolvedEnabledQrSlots;
         notifyListeners();
       }
     } catch (_) {
@@ -160,6 +170,12 @@ class BusinessSettingsController extends ChangeNotifier {
     await _saveMetadata();
   }
 
+  Future<void> setEnabledQrSlots(List<int> slots) async {
+    _enabledQrSlots = slots.toSet().toList()..sort();
+    notifyListeners();
+    await _saveMetadata();
+  }
+
   // Sends the full local state every time, not just the changed field - in
   // case the server merges shallowly or replaces user_metadata wholesale,
   // this keeps all keys consistent either way.
@@ -173,6 +189,7 @@ class BusinessSettingsController extends ChangeNotifier {
         _kSameDayBonusStartDateKey: _sameDayBonusStartDate.toIso8601String(),
         _kCustomerGroupsKey: _customerGroups,
         _kPaymentMethodsKey: _paymentMethods,
+        _kEnabledQrSlotsKey: _enabledQrSlots,
       }),
     );
   }

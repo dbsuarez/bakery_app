@@ -15,6 +15,7 @@ import 'repository/remote_repository.dart';
 import 'security/app_lock_service.dart';
 import 'settings/business_settings_controller.dart';
 import 'theme/theme_controller.dart';
+import 'ui/splash/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,7 +50,9 @@ class BakeryApp extends StatelessWidget {
           theme: themeController.lightTheme,
           darkTheme: themeController.darkTheme,
           themeMode: themeController.mode,
-          home: const CelebrationOverlay(child: AuthGate()),
+          home: const CelebrationOverlay(
+            child: AppStartupGate(child: AuthGate()),
+          ),
         ),
       ),
     );

@@ -236,6 +236,7 @@ class _UnpaidStatementReportScreenState
         appState,
         customers,
         businessName: business.name,
+        enabledQrSlots: business.enabledQrSlots,
         brandColor: PdfColor.fromInt(seedColor.toARGB32()),
       );
     } catch (e) {

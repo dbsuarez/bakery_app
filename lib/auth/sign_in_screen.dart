@@ -57,11 +57,7 @@ class _SignInScreenState extends State<SignInScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.cake,
-                      size: 56, color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(height: 8),
-                  Text('My Bakery',
-                      style: Theme.of(context).textTheme.headlineSmall),
+                  Image.asset('assets/images/logo.png', height: 140),
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _emailController,

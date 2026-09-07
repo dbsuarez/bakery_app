@@ -11,6 +11,10 @@ class LockScreen extends StatefulWidget {
   /// (app genuinely in the foreground) - never attempted from [initState],
   /// which can fire while still backgrounded (e.g. behind a share sheet).
   final int biometricTrigger;
+  /// Called when biometric is cancelled/fails, or the user starts typing a
+  /// PIN instead - lets the parent stop auto-popping biometric again for
+  /// the rest of this locked stretch.
+  final VoidCallback onBiometricDismissed;
 
   const LockScreen({
     super.key,
@@ -18,6 +22,7 @@ class LockScreen extends StatefulWidget {
     required this.onUnlocked,
     required this.biometricEnabled,
     required this.biometricTrigger,
+    required this.onBiometricDismissed,
   });
 
   @override
@@ -26,8 +31,17 @@ class LockScreen extends StatefulWidget {
 
 class _LockScreenState extends State<LockScreen> {
   final _pinController = TextEditingController();
+  final _pinFocusNode = FocusNode();
   String? _error;
   bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pinFocusNode.addListener(() {
+      if (_pinFocusNode.hasFocus) widget.onBiometricDismissed();
+    });
+  }
 
   @override
   void didUpdateWidget(covariant LockScreen oldWidget) {
@@ -41,6 +55,7 @@ class _LockScreenState extends State<LockScreen> {
   @override
   void dispose() {
     _pinController.dispose();
+    _pinFocusNode.dispose();
     super.dispose();
   }
 
@@ -50,9 +65,13 @@ class _LockScreenState extends State<LockScreen> {
       final ok = await auth.authenticate(
         localizedReason: 'Unlock My Bakery',
       );
-      if (ok) widget.onUnlocked();
+      if (ok) {
+        widget.onUnlocked();
+      } else {
+        widget.onBiometricDismissed();
+      }
     } catch (_) {
-      // Fall through to PIN entry.
+      widget.onBiometricDismissed();
     }
   }
 
@@ -86,13 +105,13 @@ class _LockScreenState extends State<LockScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock, size: 48),
+                  Image.asset('assets/images/logo.png', height: 120),
                   const SizedBox(height: 16),
                   Text('Enter PIN', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _pinController,
-                    autofocus: true,
+                    focusNode: _pinFocusNode,
                     obscureText: true,
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,

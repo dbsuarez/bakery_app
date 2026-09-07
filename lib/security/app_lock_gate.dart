@@ -30,6 +30,13 @@ class _AppLockGateState extends State<AppLockGate>
   // moment of backgrounding (e.g. the share sheet from a CSV export), which
   // Android can't show BiometricPrompt over and silently fails.
   int _biometricTrigger = 0;
+  // Sticky for as long as the app stays locked: once the user has dismissed
+  // biometric (cancelled/failed the prompt, or started typing a PIN
+  // instead), stop auto-popping it on every subsequent resume - otherwise a
+  // brief app-switch (checking a notification) re-triggers it and interrupts
+  // PIN entry every time. Reset on a successful unlock, so the next lock
+  // period starts fresh.
+  bool _biometricDismissed = false;
 
   @override
   void initState() {
@@ -72,9 +79,14 @@ class _AppLockGateState extends State<AppLockGate>
       setState(() => _locked = true);
     } else if (state == AppLifecycleState.resumed &&
         _locked &&
-        _biometricEnabled) {
+        _biometricEnabled &&
+        !_biometricDismissed) {
       setState(() => _biometricTrigger++);
     }
+  }
+
+  void _onBiometricDismissed() {
+    if (!_biometricDismissed) setState(() => _biometricDismissed = true);
   }
 
   @override
@@ -85,7 +97,11 @@ class _AppLockGateState extends State<AppLockGate>
         lockService: widget.lockService,
         biometricEnabled: _biometricEnabled,
         biometricTrigger: _biometricTrigger,
-        onUnlocked: () => setState(() => _locked = false),
+        onUnlocked: () => setState(() {
+          _locked = false;
+          _biometricDismissed = false;
+        }),
+        onBiometricDismissed: _onBiometricDismissed,
       );
     }
     return widget.child;

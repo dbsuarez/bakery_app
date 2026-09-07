@@ -413,6 +413,42 @@ using (
   and (storage.foldername(name))[1] = auth.uid()::text
 );
 
+-- Payment QR code storage bucket (up to 3 slots per user, shown on
+-- statement PDFs) - same public-read / owner-write shape as product photos.
+insert into storage.buckets (id, name, public)
+values ('qr-codes', 'qr-codes', true)
+on conflict (id) do nothing;
+
+create policy qr_codes_public_read
+on storage.objects for select
+using (bucket_id = 'qr-codes');
+
+-- Files must be stored as <user_id>/qr_<slot>.<extension>.
+create policy qr_codes_owner_insert
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy qr_codes_owner_update
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy qr_codes_owner_delete
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
 -- Run this against an already-created database to add product categories
 -- (Bakery / Merchandise), which keep each category's loyalty points pool
 -- separate, without re-running the whole script.
@@ -758,6 +794,46 @@ using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
 grant select, insert, update, delete on public.customer_credits to authenticated;
+
+-- Run this against an already-created database to add the payment QR code
+-- storage bucket (up to 3 slots per user, shown on statement PDFs) without
+-- re-running the whole script.
+insert into storage.buckets (id, name, public)
+values ('qr-codes', 'qr-codes', true)
+on conflict (id) do nothing;
+
+drop policy if exists qr_codes_public_read on storage.objects;
+create policy qr_codes_public_read
+on storage.objects for select
+using (bucket_id = 'qr-codes');
+
+drop policy if exists qr_codes_owner_insert on storage.objects;
+create policy qr_codes_owner_insert
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists qr_codes_owner_update on storage.objects;
+create policy qr_codes_owner_update
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists qr_codes_owner_delete on storage.objects;
+create policy qr_codes_owner_delete
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'qr-codes'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
 
 -- Realtime publication.
 -- If any of these tables are already in the publication, run the statement

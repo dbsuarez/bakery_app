@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -12,6 +13,7 @@ import '../analytics/customer_calculations.dart';
 import '../app_state.dart';
 import '../models/customer.dart';
 import '../models/sale.dart';
+import '../products/qr_photo_service.dart';
 import '../utils/app_date_format.dart';
 import '../utils/web_download.dart';
 
@@ -52,7 +54,8 @@ pw.Page _buildStatementPage({
   required Customer customer,
   required String businessName,
   required PdfColor brand,
-  required pw.MemoryImage? qrImage,
+  required List<pw.MemoryImage> qrImages,
+  required pw.MemoryImage? logo,
   required DateTime now,
 }) {
   final unpaid = state.sales
@@ -76,23 +79,32 @@ pw.Page _buildStatementPage({
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text(
-                  businessName,
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                    color: brand,
-                  ),
-                ),
-                pw.Text(
-                  'Statement of Account',
-                  style: const pw.TextStyle(
-                    fontSize: 11,
-                    color: PdfColors.grey700,
-                  ),
+                if (logo != null) ...[
+                  pw.Image(logo, width: 60, height: 60),
+                  pw.SizedBox(width: 10),
+                ],
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      businessName,
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                        color: brand,
+                      ),
+                    ),
+                    pw.Text(
+                      'Statement of Account',
+                      style: const pw.TextStyle(
+                        fontSize: 11,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -129,9 +141,9 @@ pw.Page _buildStatementPage({
             ),
             columnWidths: const {
               0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(3),
+              1: pw.FlexColumnWidth(2.8),
               2: pw.FlexColumnWidth(1.6),
-              3: pw.FlexColumnWidth(1),
+              3: pw.FlexColumnWidth(1.4),
               4: pw.FlexColumnWidth(1.8),
             },
             children: [
@@ -181,7 +193,7 @@ pw.Page _buildStatementPage({
               style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
             ),
           ),
-          if (qrImage != null) ...[
+          if (qrImages.isNotEmpty) ...[
             pw.SizedBox(height: 20),
             pw.Center(
               child: pw.Column(
@@ -195,7 +207,14 @@ pw.Page _buildStatementPage({
                     ),
                   ),
                   pw.SizedBox(height: 8),
-                  pw.Image(qrImage, width: 160),
+                  pw.Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
+                    alignment: pw.WrapAlignment.center,
+                    children: [
+                      for (final img in qrImages) pw.Image(img, width: 130),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -212,13 +231,47 @@ pw.Page _buildStatementPage({
   );
 }
 
-Future<pw.MemoryImage?> _loadQrImage() async {
+/// Loads the business logo (bundled asset) for the PDF header. Returns null
+/// if it's missing rather than failing the whole document.
+Future<pw.MemoryImage?> _loadLogoImage() async {
+  try {
+    final bytes = await rootBundle.load('assets/images/logo_square.png');
+    return pw.MemoryImage(bytes.buffer.asUint8List());
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Loads every enabled payment QR code the user has uploaded (Settings >
+/// Payment QR codes) as PDF images. Falls back to the bundled sample QR
+/// asset if none are configured yet, so statements still show something
+/// useful out of the box.
+Future<List<pw.MemoryImage>> _loadQrImages(List<int> enabledSlots) async {
+  try {
+    final files = await listQrPhotos();
+    final enabled = files.where((f) => enabledSlots.contains(f.slot)).toList();
+    if (enabled.isNotEmpty) {
+      final images = <pw.MemoryImage>[];
+      for (final f in enabled) {
+        try {
+          final response = await http.get(Uri.parse(f.publicUrl));
+          if (response.statusCode == 200) {
+            images.add(pw.MemoryImage(response.bodyBytes));
+          }
+        } catch (_) {
+          // Skip this one QR rather than fail the whole statement.
+        }
+      }
+      if (images.isNotEmpty) return images;
+    }
+  } catch (_) {
+    // Fall through to the bundled sample below.
+  }
   try {
     final qrBytes = await rootBundle.load('assets/images/qr_maribank.jpg');
-    return pw.MemoryImage(qrBytes.buffer.asUint8List());
+    return [pw.MemoryImage(qrBytes.buffer.asUint8List())];
   } catch (_) {
-    // Asset missing - skip the QR rather than fail the whole statement.
-    return null;
+    return [];
   }
 }
 
@@ -229,6 +282,7 @@ Future<Uint8List> buildCustomerStatementPdf(
   AppState state,
   Customer customer, {
   required String businessName,
+  required List<int> enabledQrSlots,
   PdfColor? brandColor,
 }) async {
   final brand = brandColor ?? _defaultBrandColor;
@@ -246,7 +300,8 @@ Future<Uint8List> buildCustomerStatementPdf(
   // is fine.
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
-  final qrImage = hasUnpaid ? await _loadQrImage() : null;
+  final qrImages = hasUnpaid ? await _loadQrImages(enabledQrSlots) : <pw.MemoryImage>[];
+  final logo = await _loadLogoImage();
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
@@ -256,7 +311,8 @@ Future<Uint8List> buildCustomerStatementPdf(
     customer: customer,
     businessName: businessName,
     brand: brand,
-    qrImage: qrImage,
+    qrImages: qrImages,
+    logo: logo,
     now: now,
   ));
 
@@ -264,8 +320,6 @@ Future<Uint8List> buildCustomerStatementPdf(
 }
 
 /// A combined "chase list" PDF - one statement page per customer in
-/// [customers], same layout (and QR code) as the single-customer statement -
-/// for printing/sharing an unpaid report covering several customers at once.
 /// A single unified table (same layout as the internal Unpaid Report),
 /// restricted to [customers], with a QR code at the bottom for payment -
 /// meant to be shared with the customers themselves (a household statement),
@@ -274,6 +328,7 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
   AppState state,
   List<Customer> customers, {
   required String businessName,
+  required List<int> enabledQrSlots,
   PdfColor? brandColor,
 }) async {
   final brand = brandColor ?? _defaultBrandColor;
@@ -305,7 +360,10 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
 
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
-  final qrImage = unpaidSales.isEmpty ? null : await _loadQrImage();
+  final qrImages = unpaidSales.isEmpty
+      ? <pw.MemoryImage>[]
+      : await _loadQrImages(enabledQrSlots);
+  final logo = await _loadLogoImage();
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
@@ -322,23 +380,32 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        pw.Text(
-                          businessName,
-                          style: pw.TextStyle(
-                            fontSize: 24,
-                            fontWeight: pw.FontWeight.bold,
-                            color: brand,
-                          ),
-                        ),
-                        pw.Text(
-                          'Statement of Account',
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
+                        if (logo != null) ...[
+                          pw.Image(logo, width: 60, height: 60),
+                          pw.SizedBox(width: 10),
+                        ],
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              businessName,
+                              style: pw.TextStyle(
+                                fontSize: 24,
+                                fontWeight: pw.FontWeight.bold,
+                                color: brand,
+                              ),
+                            ),
+                            pw.Text(
+                              'Statement of Account',
+                              style: const pw.TextStyle(
+                                fontSize: 11,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -382,9 +449,9 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
             ),
             columnWidths: const {
               0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(3),
+              1: pw.FlexColumnWidth(2.8),
               2: pw.FlexColumnWidth(1.6),
-              3: pw.FlexColumnWidth(1),
+              3: pw.FlexColumnWidth(1.4),
               4: pw.FlexColumnWidth(1.8),
             },
             children: [
@@ -458,7 +525,7 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
               style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
             ),
           ),
-          if (qrImage != null) ...[
+          if (qrImages.isNotEmpty) ...[
             pw.SizedBox(height: 20),
             pw.Center(
               child: pw.Column(
@@ -472,7 +539,14 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
                     ),
                   ),
                   pw.SizedBox(height: 8),
-                  pw.Image(qrImage, width: 160),
+                  pw.Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
+                    alignment: pw.WrapAlignment.center,
+                    children: [
+                      for (final img in qrImages) pw.Image(img, width: 130),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -493,12 +567,14 @@ Future<void> shareCustomerStatement(
   AppState state,
   Customer customer, {
   required String businessName,
+  required List<int> enabledQrSlots,
   PdfColor? brandColor,
 }) async {
   final bytes = await buildCustomerStatementPdf(
     state,
     customer,
     businessName: businessName,
+    enabledQrSlots: enabledQrSlots,
     brandColor: brandColor,
   );
   final safeName = customer.name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
@@ -532,12 +608,14 @@ Future<void> shareBulkUnpaidStatements(
   AppState state,
   List<Customer> customers, {
   required String businessName,
+  required List<int> enabledQrSlots,
   PdfColor? brandColor,
 }) async {
   final bytes = await buildUnpaidStatementReportPdf(
     state,
     customers,
     businessName: businessName,
+    enabledQrSlots: enabledQrSlots,
     brandColor: brandColor,
   );
   final fileName =

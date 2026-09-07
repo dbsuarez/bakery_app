@@ -12,6 +12,7 @@ import '../../repository/bakery_repository.dart';
 import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
 import '../widgets/product_avatar.dart';
+import '../widgets/qr_quick_view.dart';
 
 class SingleSaleScreen extends StatefulWidget {
   final int? initialCustomerId;
@@ -112,7 +113,16 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Log Single Transaction')),
+      appBar: AppBar(
+        title: const Text('Log Single Transaction'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_2),
+            tooltip: 'Show payment QR',
+            onPressed: () => showQrQuickView(context),
+          ),
+        ],
+      ),
       body: Form(
         key: _formKey,
         child: ListView(

@@ -17,6 +17,7 @@ import '../../utils/app_date_format.dart';
 import '../import/import_screen.dart';
 import '../import/restore_screen.dart';
 import '../products/products_list_screen.dart';
+import 'qr_codes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -123,6 +124,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: Text(business.paymentMethods.join(', ')),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _editPaymentMethods(context, business),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.qr_code_2),
+            title: const Text('Payment QR codes'),
+            subtitle: const Text('Up to 3 - shown on statement PDFs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const QrCodesScreen()),
             ),
           ),
           ListTile(

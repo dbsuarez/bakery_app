@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -73,6 +74,13 @@ Future<Uint8List> buildUnpaidReportPdf(
 
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
+  pw.MemoryImage? logo;
+  try {
+    final bytes = await rootBundle.load('assets/images/logo_square.png');
+    logo = pw.MemoryImage(bytes.buffer.asUint8List());
+  } catch (_) {
+    // Missing asset shouldn't fail the whole report.
+  }
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
@@ -89,23 +97,32 @@ Future<Uint8List> buildUnpaidReportPdf(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        pw.Text(
-                          businessName,
-                          style: pw.TextStyle(
-                            fontSize: 24,
-                            fontWeight: pw.FontWeight.bold,
-                            color: brand,
-                          ),
-                        ),
-                        pw.Text(
-                          'Unpaid Report',
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
+                        if (logo != null) ...[
+                          pw.Image(logo, width: 60, height: 60),
+                          pw.SizedBox(width: 10),
+                        ],
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              businessName,
+                              style: pw.TextStyle(
+                                fontSize: 24,
+                                fontWeight: pw.FontWeight.bold,
+                                color: brand,
+                              ),
+                            ),
+                            pw.Text(
+                              'Unpaid Report',
+                              style: const pw.TextStyle(
+                                fontSize: 11,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -149,9 +166,9 @@ Future<Uint8List> buildUnpaidReportPdf(
             ),
             columnWidths: const {
               0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(3),
+              1: pw.FlexColumnWidth(2.8),
               2: pw.FlexColumnWidth(1.6),
-              3: pw.FlexColumnWidth(1),
+              3: pw.FlexColumnWidth(1.4),
               4: pw.FlexColumnWidth(1.8),
             },
             children: [

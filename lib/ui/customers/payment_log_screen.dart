@@ -2,21 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../models/product.dart';
-import '../../models/sale.dart';
 import '../../utils/app_date_format.dart';
 import '../../utils/segment_label.dart';
 import '../widgets/product_avatar.dart';
 import 'customer_ledger_screen.dart';
+import 'payments_by_method_screen.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
 enum _CategoryFilter { all, bakery, merchandise }
 
-/// A chronological feed of every payment recorded (paid customer_sale rows,
-/// most recent `date_paid` first) - a running receipts log, distinct from
-/// the Unpaid Report which looks at what's still owed.
+/// A chronological feed of every payment received - most recent first - a
+/// running receipts log, distinct from the Unpaid Report which looks at
+/// what's still owed. Each installment on a partial payment shows as its
+/// own line, alongside sales paid off in one go.
 class PaymentLogScreen extends StatefulWidget {
   const PaymentLogScreen({super.key});
 
@@ -38,20 +40,15 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final payments = appState.sales
-        .where((s) =>
-            !s.isDeleted &&
-            s.paid &&
-            s.datePaid != null &&
-            s.saleType == SaleType.customerSale)
-        .where((s) {
+    final payments = allPaymentEvents(appState.sales, appState.salePayments)
+        .where((p) {
           if (_search.isEmpty) return true;
-          final name = appState.customerById(s.customerId)?.name ?? '';
+          final name = appState.customerById(p.customerId)?.name ?? '';
           return name.toLowerCase().contains(_search.toLowerCase());
         })
-        .where((s) {
+        .where((p) {
           if (_filter == _CategoryFilter.all) return true;
-          final batch = appState.batchById(s.batchId);
+          final batch = appState.batchById(p.batchId);
           final category = batch == null
               ? null
               : appState.productById(batch.productId)?.category;
@@ -60,12 +57,23 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
               : category == ProductCategory.merchandise;
         })
         .toList()
-      ..sort((a, b) => b.datePaid!.compareTo(a.datePaid!));
+      ..sort((a, b) => b.date.compareTo(a.date));
 
-    final total = payments.fold<double>(0, (sum, s) => sum + s.amount);
+    final total = payments.fold<double>(0, (sum, p) => sum + p.amount);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Payment Log')),
+      appBar: AppBar(
+        title: const Text('Payment Log'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.pie_chart_outline),
+            tooltip: 'By payment method',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PaymentsByMethodScreen()),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -138,20 +146,20 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
                 : ListView.builder(
                     itemCount: payments.length,
                     itemBuilder: (context, index) {
-                      final sale = payments[index];
-                      final customer = appState.customerById(sale.customerId);
-                      final batch = appState.batchById(sale.batchId);
+                      final payment = payments[index];
+                      final customer = appState.customerById(payment.customerId);
+                      final batch = appState.batchById(payment.batchId);
                       final product =
                           batch == null ? null : appState.productById(batch.productId);
                       return ListTile(
                         leading: ProductAvatar(imageUrl: product?.imageUrl),
                         title: Text(customer?.name ?? 'Unknown customer'),
                         subtitle: Text(
-                          '${product?.title ?? ''} × ${sale.quantity} · '
-                          'Paid ${appDateFormat.format(sale.datePaid!)}'
-                          '${sale.paymentMethod != null ? ' via ${sale.paymentMethod}' : ''}',
+                          '${product?.title ?? ''} × ${payment.quantity} · '
+                          'Paid ${appDateFormat.format(payment.date)}'
+                          '${payment.paymentMethod != null ? ' via ${payment.paymentMethod}' : ''}',
                         ),
-                        trailing: Text(_currency.format(sale.amount)),
+                        trailing: Text(_currency.format(payment.amount)),
                         onTap: customer == null
                             ? null
                             : () => Navigator.of(context).push(
