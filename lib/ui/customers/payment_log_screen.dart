@@ -6,6 +6,7 @@ import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../models/product.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/note_dialog.dart';
 import '../../utils/segment_label.dart';
 import '../widgets/product_avatar.dart';
 import 'customer_ledger_screen.dart';
@@ -40,24 +41,25 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final payments = allPaymentEvents(appState.sales, appState.salePayments)
-        .where((p) {
-          if (_search.isEmpty) return true;
-          final name = appState.customerById(p.customerId)?.name ?? '';
-          return name.toLowerCase().contains(_search.toLowerCase());
-        })
-        .where((p) {
-          if (_filter == _CategoryFilter.all) return true;
-          final batch = appState.batchById(p.batchId);
-          final category = batch == null
-              ? null
-              : appState.productById(batch.productId)?.category;
-          return _filter == _CategoryFilter.bakery
-              ? category == ProductCategory.bakery
-              : category == ProductCategory.merchandise;
-        })
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final payments =
+        allPaymentEvents(appState.sales, appState.salePayments)
+            .where((p) {
+              if (_search.isEmpty) return true;
+              final name = appState.customerById(p.customerId)?.name ?? '';
+              return name.toLowerCase().contains(_search.toLowerCase());
+            })
+            .where((p) {
+              if (_filter == _CategoryFilter.all) return true;
+              final batch = appState.batchById(p.batchId);
+              final category = batch == null
+                  ? null
+                  : appState.productById(batch.productId)?.category;
+              return _filter == _CategoryFilter.bakery
+                  ? category == ProductCategory.bakery
+                  : category == ProductCategory.merchandise;
+            })
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
 
     final total = payments.fold<double>(0, (sum, p) => sum + p.amount);
 
@@ -147,10 +149,13 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
                     itemCount: payments.length,
                     itemBuilder: (context, index) {
                       final payment = payments[index];
-                      final customer = appState.customerById(payment.customerId);
+                      final customer = appState.customerById(
+                        payment.customerId,
+                      );
                       final batch = appState.batchById(payment.batchId);
-                      final product =
-                          batch == null ? null : appState.productById(batch.productId);
+                      final product = batch == null
+                          ? null
+                          : appState.productById(batch.productId);
                       return ListTile(
                         leading: ProductAvatar(imageUrl: product?.imageUrl),
                         title: Text(customer?.name ?? 'Unknown customer'),
@@ -159,15 +164,22 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
                           'Paid ${appDateFormat.format(payment.date)}'
                           '${payment.paymentMethod != null ? ' via ${payment.paymentMethod}' : ''}',
                         ),
-                        trailing: Text(_currency.format(payment.amount)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            NoteIndicator(note: payment.notes),
+                            Text(_currency.format(payment.amount)),
+                          ],
+                        ),
                         onTap: customer == null
                             ? null
                             : () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => CustomerLedgerScreen(
-                                        customerId: customer.id),
+                                MaterialPageRoute(
+                                  builder: (_) => CustomerLedgerScreen(
+                                    customerId: customer.id,
                                   ),
                                 ),
+                              ),
                       );
                     },
                   ),

@@ -14,6 +14,12 @@ class PaymentEvent {
   final String? paymentMethod;
   final DateTime date;
 
+  /// The note on this specific payment (an installment's own note), or -
+  /// for a sale paid off in one go, with no installment row of its own -
+  /// the underlying sale's note, since that's the closest thing to a note
+  /// on "how this payment happened".
+  final String? notes;
+
   const PaymentEvent({
     required this.saleId,
     required this.customerId,
@@ -22,6 +28,7 @@ class PaymentEvent {
     required this.amount,
     required this.paymentMethod,
     required this.date,
+    required this.notes,
   });
 }
 
@@ -42,15 +49,18 @@ List<PaymentEvent> allPaymentEvents(
     final sale = salesById[p.saleId];
     if (sale == null || sale.saleType != SaleType.customerSale) continue;
     installmentSaleIds.add(p.saleId);
-    events.add(PaymentEvent(
-      saleId: sale.id,
-      customerId: sale.customerId,
-      batchId: sale.batchId,
-      quantity: sale.quantity,
-      amount: p.amount,
-      paymentMethod: p.paymentMethod,
-      date: p.paymentDate,
-    ));
+    events.add(
+      PaymentEvent(
+        saleId: sale.id,
+        customerId: sale.customerId,
+        batchId: sale.batchId,
+        quantity: sale.quantity,
+        amount: p.amount,
+        paymentMethod: p.paymentMethod,
+        date: p.paymentDate,
+        notes: p.notes,
+      ),
+    );
   }
 
   for (final s in sales) {
@@ -61,15 +71,18 @@ List<PaymentEvent> allPaymentEvents(
       continue;
     }
     if (installmentSaleIds.contains(s.id)) continue;
-    events.add(PaymentEvent(
-      saleId: s.id,
-      customerId: s.customerId,
-      batchId: s.batchId,
-      quantity: s.quantity,
-      amount: s.amount,
-      paymentMethod: s.paymentMethod,
-      date: s.datePaid!,
-    ));
+    events.add(
+      PaymentEvent(
+        saleId: s.id,
+        customerId: s.customerId,
+        batchId: s.batchId,
+        quantity: s.quantity,
+        amount: s.amount,
+        paymentMethod: s.paymentMethod,
+        date: s.datePaid!,
+        notes: s.notes,
+      ),
+    );
   }
 
   return events;

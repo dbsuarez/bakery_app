@@ -64,10 +64,12 @@ class DashboardData {
   // Product cards
   final List<ProductStat> bestSellerByUnits;
   final List<ProductStat> bestSellerByRevenue;
+  final List<ProductStat> bestProfitPerPiece;
   final List<ProductStat> unsoldWatchlist;
   final List<ProductStat> personalUnsoldWatchlist;
 
   // Operations
+  final int batchCount;
   final List<Batch> batchesAwaitingRemittance;
   final List<Sale> recentPayments;
   final List<Batch> recentBatches;
@@ -126,8 +128,10 @@ class DashboardData {
     required this.atRisk,
     required this.bestSellerByUnits,
     required this.bestSellerByRevenue,
+    required this.bestProfitPerPiece,
     required this.unsoldWatchlist,
     required this.personalUnsoldWatchlist,
+    required this.batchCount,
     required this.batchesAwaitingRemittance,
     required this.recentPayments,
     required this.recentBatches,
@@ -173,10 +177,13 @@ DashboardData computeDashboard({
   // are kept out of every business-performance figure below - revenue,
   // profit, best-sellers, and customer stats all describe the shop's
   // business, not what the owner made for themselves.
-  final personalBatchIds =
-      liveBatches.where((b) => b.isPersonal).map((b) => b.id).toSet();
-  final businessSales =
-      liveSales.where((s) => !personalBatchIds.contains(s.batchId)).toList();
+  final personalBatchIds = liveBatches
+      .where((b) => b.isPersonal)
+      .map((b) => b.id)
+      .toSet();
+  final businessSales = liveSales
+      .where((s) => !personalBatchIds.contains(s.batchId))
+      .toList();
 
   final outstandingReceivables = businessSales
       .where((s) => !s.paid && s.saleType == SaleType.customerSale)
@@ -185,12 +192,17 @@ DashboardData computeDashboard({
   // Once a batch is remitted, its full value (paid + unpaid) has already
   // gone out; any still-unpaid amount is money the owner personally
   // fronted, not the shop till's receivable anymore.
-  final remittedBatchIds = liveBatches.where((b) => b.remitted).map((b) => b.id).toSet();
+  final remittedBatchIds = liveBatches
+      .where((b) => b.remitted)
+      .map((b) => b.id)
+      .toSet();
   final frontedAmount = businessSales
-      .where((s) =>
-          !s.paid &&
-          s.saleType == SaleType.customerSale &&
-          remittedBatchIds.contains(s.batchId))
+      .where(
+        (s) =>
+            !s.paid &&
+            s.saleType == SaleType.customerSale &&
+            remittedBatchIds.contains(s.batchId),
+      )
       .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, salePayments));
 
   // Value of unsold inventory, tracked separately from receivables since
@@ -204,7 +216,8 @@ DashboardData computeDashboard({
       .fold(
         0.0,
         (sum, b) =>
-            sum + remainingQuantity(b, liveSales).clamp(0, 1 << 30) * b.unitPrice,
+            sum +
+            remainingQuantity(b, liveSales).clamp(0, 1 << 30) * b.unitPrice,
       );
   final unsoldValue = unsoldValueFor(false);
   final personalUnsoldValue = unsoldValueFor(true);
@@ -219,8 +232,10 @@ DashboardData computeDashboard({
   double revenueInWeek(DateTime weekStart) {
     final weekEnd = weekStart.add(const Duration(days: 7));
     return businessSales
-        .where((s) =>
-            !s.saleDate.isBefore(weekStart) && s.saleDate.isBefore(weekEnd))
+        .where(
+          (s) =>
+              !s.saleDate.isBefore(weekStart) && s.saleDate.isBefore(weekEnd),
+        )
         .fold(0.0, (sum, s) => sum + s.amount);
   }
 
@@ -271,8 +286,9 @@ DashboardData computeDashboard({
   }
 
   final monthStart = DateTime(today.year, today.month, 1);
-  final monthBatches = liveBatches
-      .where((b) => !b.batchDate.isBefore(monthStart) && !b.isPersonal);
+  final monthBatches = liveBatches.where(
+    (b) => !b.batchDate.isBefore(monthStart) && !b.isPersonal,
+  );
   final hasCostData = monthBatches.any((b) => b.unitCost > 0);
   final thisMonthEstimatedProfit = hasCostData
       ? monthBatches.fold<double>(0.0, (sum, b) => sum + b.estimatedProfit)
@@ -282,8 +298,7 @@ DashboardData computeDashboard({
       .where((s) => !s.saleDate.isBefore(monthStart))
       .fold(0.0, (sum, s) => sum + s.amount);
 
-  final allTimeRevenue =
-      businessSales.fold(0.0, (sum, s) => sum + s.amount);
+  final allTimeRevenue = businessSales.fold(0.0, (sum, s) => sum + s.amount);
 
   final businessBatches = liveBatches.where((b) => !b.isPersonal);
   final hasAnyCostData = businessBatches.any((b) => b.unitCost > 0);
@@ -291,33 +306,44 @@ DashboardData computeDashboard({
       ? businessBatches.fold<double>(0.0, (sum, b) => sum + b.estimatedProfit)
       : null;
 
-  final customerSales =
-      businessSales.where((s) => s.saleType == SaleType.customerSale);
+  final customerSales = businessSales.where(
+    (s) => s.saleType == SaleType.customerSale,
+  );
   final customerSaleCount = customerSales.length;
   final averageOrderValue = customerSaleCount == 0
       ? 0.0
-      : customerSales.fold(0.0, (sum, s) => sum + s.amount) /
-          customerSaleCount;
+      : customerSales.fold(0.0, (sum, s) => sum + s.amount) / customerSaleCount;
 
-  final loyalStats = liveCustomers
-      .map((c) =>
-          CustomerStat(c, customerOrderCount(c.id, businessSales).toDouble()))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final loyalStats =
+      liveCustomers
+          .map(
+            (c) => CustomerStat(
+              c,
+              customerOrderCount(c.id, businessSales).toDouble(),
+            ),
+          )
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-  final spenderStats = liveCustomers
-      .map((c) => CustomerStat(c, customerTotalSpent(c.id, businessSales)))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final spenderStats =
+      liveCustomers
+          .map((c) => CustomerStat(c, customerTotalSpent(c.id, businessSales)))
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-  final unpaidStats = liveCustomers
-      .map((c) =>
-          CustomerStat(c, customerBalance(c.id, businessSales, salePayments)))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final unpaidStats =
+      liveCustomers
+          .map(
+            (c) => CustomerStat(
+              c,
+              customerBalance(c.id, businessSales, salePayments),
+            ),
+          )
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
   final customerOfTheMonth = spenderStats.isNotEmpty
       ? spenderStats.first.customer
@@ -330,9 +356,11 @@ DashboardData computeDashboard({
         .where((b) => b.productId == productId && !b.isPersonal)
         .map((b) => b.id);
     return businessSales
-        .where((s) =>
-            batchIds.contains(s.batchId) &&
-            s.saleType == SaleType.customerSale)
+        .where(
+          (s) =>
+              batchIds.contains(s.batchId) &&
+              s.saleType == SaleType.customerSale,
+        )
         .fold(0.0, (sum, s) => sum + s.quantity);
   }
 
@@ -351,10 +379,12 @@ DashboardData computeDashboard({
   // by personal vs. business so the watchlist doesn't mix the two.
   int unsoldForProduct(int productId, {required bool personal}) {
     final productBatches = liveBatches
-        .where((b) =>
-            b.productId == productId &&
-            b.isPersonal == personal &&
-            (b.remitted || b.isPersonal))
+        .where(
+          (b) =>
+              b.productId == productId &&
+              b.isPersonal == personal &&
+              (b.remitted || b.isPersonal),
+        )
         .toList();
     return productBatches.fold<int>(
       0,
@@ -362,46 +392,91 @@ DashboardData computeDashboard({
     );
   }
 
-  final bestSellerByUnits = liveProducts
-      .map((p) => ProductStat(p, unitsForProduct(p.id)))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final bestSellerByUnits =
+      liveProducts
+          .map((p) => ProductStat(p, unitsForProduct(p.id)))
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-  final bestSellerByRevenue = liveProducts
-      .map((p) => ProductStat(p, revenueForProduct(p.id)))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final bestSellerByRevenue =
+      liveProducts
+          .map((p) => ProductStat(p, revenueForProduct(p.id)))
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-  final unsoldWatchlist = liveProducts
-      .map((p) =>
-          ProductStat(p, unsoldForProduct(p.id, personal: false).toDouble()))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  // Average (unit_price - unit_cost) across a product's batches that have
+  // cost data - personal batches excluded, same as every other business
+  // figure. A product with no cost data on any batch is left out entirely
+  // rather than shown as zero margin.
+  double? profitPerPieceForProduct(int productId) {
+    final costBatches = liveBatches
+        .where(
+          (b) => b.productId == productId && !b.isPersonal && b.unitCost > 0,
+        )
+        .toList();
+    if (costBatches.isEmpty) return null;
+    final totalMargin = costBatches.fold<double>(
+      0.0,
+      (sum, b) => sum + (b.unitPrice - b.unitCost),
+    );
+    return totalMargin / costBatches.length;
+  }
 
-  final personalUnsoldWatchlist = liveProducts
-      .map((p) =>
-          ProductStat(p, unsoldForProduct(p.id, personal: true).toDouble()))
-      .where((s) => s.value > 0)
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final bestProfitPerPiece =
+      liveProducts
+          .map((p) {
+            final margin = profitPerPieceForProduct(p.id);
+            return margin == null ? null : ProductStat(p, margin);
+          })
+          .whereType<ProductStat>()
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+  final unsoldWatchlist =
+      liveProducts
+          .map(
+            (p) => ProductStat(
+              p,
+              unsoldForProduct(p.id, personal: false).toDouble(),
+            ),
+          )
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+  final personalUnsoldWatchlist =
+      liveProducts
+          .map(
+            (p) => ProductStat(
+              p,
+              unsoldForProduct(p.id, personal: true).toDouble(),
+            ),
+          )
+          .where((s) => s.value > 0)
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+  final batchCount = liveBatches.length;
 
   final batchesAwaitingRemittance =
       liveBatches.where((b) => !b.remitted && !b.isPersonal).toList()
         ..sort((a, b) => a.batchDate.compareTo(b.batchDate));
 
-  final recentPayments = liveSales.where((s) => s.paid && s.datePaid != null)
-      .toList()
-    ..sort((a, b) => b.datePaid!.compareTo(a.datePaid!));
+  final recentPayments =
+      liveSales.where((s) => s.paid && s.datePaid != null).toList()
+        ..sort((a, b) => b.datePaid!.compareTo(a.datePaid!));
 
   final recentBatches = [...liveBatches]
     ..sort((a, b) => b.batchDate.compareTo(a.batchDate));
 
   final activeBatches = liveBatches
-      .where((b) =>
-          !b.remitted && !b.isPersonal && remainingQuantity(b, liveSales) > 0)
+      .where(
+        (b) =>
+            !b.remitted && !b.isPersonal && remainingQuantity(b, liveSales) > 0,
+      )
       .toList();
 
   final personalActiveBatches = liveBatches
@@ -410,12 +485,16 @@ DashboardData computeDashboard({
 
   final personalBatches = liveBatches.where((b) => b.isPersonal).toList();
   final personalBatchCount = personalBatches.length;
-  final personalTotalValueProduced =
-      personalBatches.fold(0.0, (sum, b) => sum + b.totalValue);
+  final personalTotalValueProduced = personalBatches.fold(
+    0.0,
+    (sum, b) => sum + b.totalValue,
+  );
   final personalHasCostData = personalBatches.any((b) => b.unitCost > 0);
   final personalTotalCost = personalHasCostData
       ? personalBatches.fold<double>(
-          0.0, (sum, b) => sum + (b.countProduced * b.unitCost))
+          0.0,
+          (sum, b) => sum + (b.countProduced * b.unitCost),
+        )
       : null;
   final personalEstimatedProfit = personalTotalCost == null
       ? null
@@ -425,28 +504,35 @@ DashboardData computeDashboard({
       .where((s) => personalBatchIdSet.contains(s.batchId))
       .fold<int>(0, (sum, s) => sum + s.quantity);
   final personalOutstandingReceivables = liveSales
-      .where((s) =>
-          personalBatchIdSet.contains(s.batchId) &&
-          !s.paid &&
-          s.saleType == SaleType.customerSale)
+      .where(
+        (s) =>
+            personalBatchIdSet.contains(s.batchId) &&
+            !s.paid &&
+            s.saleType == SaleType.customerSale,
+      )
       .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, salePayments));
   final personalRevenue = liveSales
-      .where((s) =>
-          personalBatchIdSet.contains(s.batchId) &&
-          s.saleType == SaleType.customerSale)
+      .where(
+        (s) =>
+            personalBatchIdSet.contains(s.batchId) &&
+            s.saleType == SaleType.customerSale,
+      )
       .fold(0.0, (sum, s) => sum + s.amount);
-  final personalMonthBatches = personalBatches
-      .where((b) => !b.batchDate.isBefore(monthStart));
-  final personalHasMonthCostData =
-      personalMonthBatches.any((b) => b.unitCost > 0);
+  final personalMonthBatches = personalBatches.where(
+    (b) => !b.batchDate.isBefore(monthStart),
+  );
+  final personalHasMonthCostData = personalMonthBatches.any(
+    (b) => b.unitCost > 0,
+  );
   final personalThisMonthEstimatedProfit = personalHasMonthCostData
       ? personalMonthBatches.fold<double>(
-          0.0, (sum, b) => sum + b.estimatedProfit)
+          0.0,
+          (sum, b) => sum + b.estimatedProfit,
+        )
       : null;
 
   final eightWeekTrend = List.generate(8, (i) {
-    final weekStart =
-        thisWeekStart.subtract(Duration(days: 7 * (7 - i)));
+    final weekStart = thisWeekStart.subtract(Duration(days: 7 * (7 - i)));
     return WeekRevenue(weekStart, revenueInWeek(weekStart));
   });
 
@@ -458,41 +544,48 @@ DashboardData computeDashboard({
   double revenueInMonth(DateTime monthStart) {
     final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
     return businessSales
-        .where((s) =>
-            !s.saleDate.isBefore(monthStart) && s.saleDate.isBefore(monthEnd))
+        .where(
+          (s) =>
+              !s.saleDate.isBefore(monthStart) && s.saleDate.isBefore(monthEnd),
+        )
         .fold(0.0, (sum, s) => sum + s.amount);
   }
 
   final monthlyTrend = List.generate(6, (i) {
     final offset = 5 - i;
-    final monthStart2 =
-        DateTime(today.year, today.month - offset, 1);
+    final monthStart2 = DateTime(today.year, today.month - offset, 1);
     return MonthRevenue(monthStart2, revenueInMonth(monthStart2));
   });
 
   // Personal trend uses batch production date/value, not sales revenue -
   // personal batches normally carry no real sale amount to trend on.
   double personalValueOnDay(DateTime day) => personalBatches
-      .where((b) =>
-          b.batchDate.year == day.year &&
-          b.batchDate.month == day.month &&
-          b.batchDate.day == day.day)
+      .where(
+        (b) =>
+            b.batchDate.year == day.year &&
+            b.batchDate.month == day.month &&
+            b.batchDate.day == day.day,
+      )
       .fold(0.0, (sum, b) => sum + b.totalValue);
 
   double personalValueInWeek(DateTime weekStart) {
     final weekEnd = weekStart.add(const Duration(days: 7));
     return personalBatches
-        .where((b) =>
-            !b.batchDate.isBefore(weekStart) && b.batchDate.isBefore(weekEnd))
+        .where(
+          (b) =>
+              !b.batchDate.isBefore(weekStart) && b.batchDate.isBefore(weekEnd),
+        )
         .fold(0.0, (sum, b) => sum + b.totalValue);
   }
 
   double personalValueInMonth(DateTime monthStart) {
     final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
     return personalBatches
-        .where((b) =>
-            !b.batchDate.isBefore(monthStart) &&
-            b.batchDate.isBefore(monthEnd))
+        .where(
+          (b) =>
+              !b.batchDate.isBefore(monthStart) &&
+              b.batchDate.isBefore(monthEnd),
+        )
         .fold(0.0, (sum, b) => sum + b.totalValue);
   }
 
@@ -536,8 +629,10 @@ DashboardData computeDashboard({
     atRisk: atRisk,
     bestSellerByUnits: bestSellerByUnits.take(5).toList(),
     bestSellerByRevenue: bestSellerByRevenue.take(5).toList(),
+    bestProfitPerPiece: bestProfitPerPiece.take(5).toList(),
     unsoldWatchlist: unsoldWatchlist.take(5).toList(),
     personalUnsoldWatchlist: personalUnsoldWatchlist.take(5).toList(),
+    batchCount: batchCount,
     batchesAwaitingRemittance: batchesAwaitingRemittance,
     recentPayments: recentPayments.take(10).toList(),
     recentBatches: recentBatches.take(10).toList(),

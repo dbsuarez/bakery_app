@@ -37,8 +37,8 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
     super.dispose();
   }
 
-  bool _matches(Batch batch) {
-    switch (_filter) {
+  static bool _matchesFilter(Batch batch, BatchFilter filter) {
+    switch (filter) {
       case BatchFilter.all:
         return true;
       case BatchFilter.awaiting:
@@ -50,18 +50,27 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
     }
   }
 
+  bool _matches(Batch batch) => _matchesFilter(batch, _filter);
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final batches = appState.batches
-        .where(_matches)
-        .where((b) => appState
-            .productById(b.productId)
-            ?.title
-            .toLowerCase()
-            .contains(_search.toLowerCase()) ??
-            _search.isEmpty)
-        .toList()
+    final searched = appState.batches
+        .where(
+          (b) =>
+              appState
+                  .productById(b.productId)
+                  ?.title
+                  .toLowerCase()
+                  .contains(_search.toLowerCase()) ??
+              _search.isEmpty,
+        )
+        .toList();
+    final counts = {
+      for (final f in BatchFilter.values)
+        f: searched.where((b) => _matchesFilter(b, f)).length,
+    };
+    final batches = searched.where(_matches).toList()
       ..sort((a, b) {
         final dateCompare = b.batchDate.compareTo(a.batchDate);
         if (dateCompare != 0) return dateCompare;
@@ -84,9 +93,9 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const BatchFormScreen()),
-        ),
+        onPressed: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const BatchFormScreen())),
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -119,25 +128,26 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('All'),
+                  label: Text('All (${counts[BatchFilter.all]})'),
                   selected: _filter == BatchFilter.all,
-                  onSelected: (_) =>
-                      setState(() => _filter = BatchFilter.all),
+                  onSelected: (_) => setState(() => _filter = BatchFilter.all),
                 ),
                 ChoiceChip(
-                  label: const Text('Awaiting Remittance'),
+                  label: Text(
+                    'Awaiting Remittance (${counts[BatchFilter.awaiting]})',
+                  ),
                   selected: _filter == BatchFilter.awaiting,
                   onSelected: (_) =>
                       setState(() => _filter = BatchFilter.awaiting),
                 ),
                 ChoiceChip(
-                  label: const Text('Remitted'),
+                  label: Text('Remitted (${counts[BatchFilter.remitted]})'),
                   selected: _filter == BatchFilter.remitted,
                   onSelected: (_) =>
                       setState(() => _filter = BatchFilter.remitted),
                 ),
                 ChoiceChip(
-                  label: const Text('Personal'),
+                  label: Text('Personal (${counts[BatchFilter.personal]})'),
                   selected: _filter == BatchFilter.personal,
                   onSelected: (_) =>
                       setState(() => _filter = BatchFilter.personal),
@@ -153,13 +163,15 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                     itemBuilder: (context, index) {
                       final batch = batches[index];
                       final product = appState.productById(batch.productId);
-                      final remaining =
-                          remainingQuantity(batch, appState.sales);
+                      final remaining = remainingQuantity(
+                        batch,
+                        appState.sales,
+                      );
                       final statusIcon = batch.isPersonal
                           ? Icons.person
                           : batch.remitted
-                              ? Icons.lock
-                              : Icons.lock_open;
+                          ? Icons.lock
+                          : Icons.lock_open;
                       return ListTile(
                         leading: Stack(
                           clipBehavior: Clip.none,
@@ -170,8 +182,9 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                               bottom: -2,
                               child: CircleAvatar(
                                 radius: 9,
-                                backgroundColor:
-                                    Theme.of(context).scaffoldBackgroundColor,
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).scaffoldBackgroundColor,
                                 child: Icon(
                                   statusIcon,
                                   size: 11,
@@ -195,9 +208,9 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                               Icon(
                                 Icons.paid_outlined,
                                 size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ],
                           ],
@@ -209,8 +222,8 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                         trailing: batch.isPersonal
                             ? const Text('Personal')
                             : batch.remitted
-                                ? const Text('Remitted')
-                                : Text('₱${batch.totalValue.toStringAsFixed(2)}'),
+                            ? const Text('Remitted')
+                            : Text('₱${batch.totalValue.toStringAsFixed(2)}'),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => SwipeableBatchDetailScreen(

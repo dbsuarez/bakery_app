@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/note_dialog.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
@@ -15,8 +16,7 @@ class PaymentsByMethodScreen extends StatefulWidget {
   const PaymentsByMethodScreen({super.key});
 
   @override
-  State<PaymentsByMethodScreen> createState() =>
-      _PaymentsByMethodScreenState();
+  State<PaymentsByMethodScreen> createState() => _PaymentsByMethodScreenState();
 }
 
 class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
@@ -27,10 +27,11 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final events = allPaymentEvents(appState.sales, appState.salePayments)
-        .where((p) =>
-            _range == null ||
-            (!p.date.isBefore(_range!.start) &&
-                !p.date.isAfter(_range!.end)))
+        .where(
+          (p) =>
+              _range == null ||
+              (!p.date.isBefore(_range!.start) && !p.date.isAfter(_range!.end)),
+        )
         .toList();
 
     final byMethod = <String, List<PaymentEvent>>{};
@@ -38,8 +39,11 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
       byMethod.putIfAbsent(e.paymentMethod ?? 'Unspecified', () => []).add(e);
     }
     final methods = byMethod.keys.toList()
-      ..sort((a, b) => byMethod[b]!.fold<double>(0, (s, e) => s + e.amount)
-          .compareTo(byMethod[a]!.fold<double>(0, (s, e) => s + e.amount)));
+      ..sort(
+        (a, b) => byMethod[b]!
+            .fold<double>(0, (s, e) => s + e.amount)
+            .compareTo(byMethod[a]!.fold<double>(0, (s, e) => s + e.amount)),
+      );
     final grandTotal = events.fold<double>(0, (sum, e) => sum + e.amount);
 
     return Scaffold(
@@ -112,20 +116,32 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
                       title: Text(method),
                       subtitle: Text('${byMethod[method]!.length} payment(s)'),
                       trailing: Text(
-                        _currency.format(byMethod[method]!
-                            .fold<double>(0, (s, e) => s + e.amount)),
+                        _currency.format(
+                          byMethod[method]!.fold<double>(
+                            0,
+                            (s, e) => s + e.amount,
+                          ),
+                        ),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       children: [
-                        for (final e in byMethod[method]!
-                          ..sort((a, b) => b.date.compareTo(a.date)))
+                        for (final e
+                            in byMethod[method]!
+                              ..sort((a, b) => b.date.compareTo(a.date)))
                           ListTile(
                             dense: true,
                             title: Text(
-                                appState.customerById(e.customerId)?.name ??
-                                    'Unknown customer'),
+                              appState.customerById(e.customerId)?.name ??
+                                  'Unknown customer',
+                            ),
                             subtitle: Text(appDateFormat.format(e.date)),
-                            trailing: Text(_currency.format(e.amount)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                NoteIndicator(note: e.notes),
+                                Text(_currency.format(e.amount)),
+                              ],
+                            ),
                           ),
                       ],
                     ),

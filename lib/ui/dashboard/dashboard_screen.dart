@@ -56,8 +56,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       salePayments: appState.salePayments,
     );
 
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _checkPersonalBest(data));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _checkPersonalBest(data),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -187,10 +188,7 @@ class _ResponsiveSections extends StatelessWidget {
                 width: columnWidth,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionTitle(section.title),
-                    section.child,
-                  ],
+                  children: [_SectionTitle(section.title), section.child],
                 ),
               ),
           ],
@@ -214,9 +212,9 @@ class _QuickActions extends StatelessWidget {
       runSpacing: 8,
       children: [
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const BatchFormScreen()),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const BatchFormScreen())),
           icon: const Icon(Icons.add),
           label: const Text('Add Batch'),
         ),
@@ -230,9 +228,9 @@ class _QuickActions extends StatelessWidget {
           label: const Text('Batch Add Transactions'),
         ),
         OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SingleSaleScreen()),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const SingleSaleScreen())),
           icon: const Icon(Icons.point_of_sale),
           label: const Text('Log Single Transaction'),
         ),
@@ -261,30 +259,43 @@ class _FavoritesInStock extends StatelessWidget {
     }
     if (entries.isEmpty) return const SizedBox.shrink();
 
+    // Card color is fixed (light amber) regardless of light/dark theme, so
+    // text/icon colors must be pinned too - otherwise dark mode's default
+    // (light) text color lands on this light background and is unreadable.
+    const onCard = Color(0xFF5C3D00);
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Card(
         color: Colors.amber.shade50,
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.favorite, color: Colors.red.shade400, size: 20),
-                  const SizedBox(width: 8),
-                  Text('Favorites in stock',
-                      style: Theme.of(context).textTheme.titleMedium),
-                ],
-              ),
-              const SizedBox(height: 8),
-              for (final e in entries)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text('${e.productTitle} - ${e.customerNames.join(', ')}'),
+          child: DefaultTextStyle(
+            style: const TextStyle(color: onCard),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.favorite, color: Colors.red.shade400, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Favorites in stock',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: onCard),
+                    ),
+                  ],
                 ),
-            ],
+                const SizedBox(height: 8),
+                for (final e in entries)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      '${e.productTitle} - ${e.customerNames.join(', ')}',
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -306,8 +317,9 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showDescription =
-        context.watch<ThemeController>().showCardDescriptions;
+    final showDescription = context
+        .watch<ThemeController>()
+        .showCardDescriptions;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -330,8 +342,8 @@ class _StatTile extends StatelessWidget {
                 Text(
                   description!,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ],
@@ -357,12 +369,18 @@ class _MoneyCards extends StatelessWidget {
   List<Widget> _bakingTiles(BuildContext context) {
     final trend = data.thisWeekRevenue - data.lastWeekRevenue;
     void goToBatches(BatchFilter filter) => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => BatchesListScreen(initialFilter: filter),
-          ),
-        );
+      MaterialPageRoute(
+        builder: (_) => BatchesListScreen(initialFilter: filter),
+      ),
+    );
 
     return <Widget>[
+      _StatTile(
+        label: 'Batches created (all time)',
+        value: '${data.batchCount}',
+        description: 'Total batches recorded, business + personal',
+        onTap: () => goToBatches(BatchFilter.all),
+      ),
       _StatTile(
         label: 'Outstanding receivables',
         value: _currency.format(data.outstandingReceivables),
@@ -372,7 +390,8 @@ class _MoneyCards extends StatelessWidget {
         _StatTile(
           label: 'Fronted (remitted, uncollected)',
           value: _currency.format(data.frontedAmount),
-          description: 'Unpaid sales on batches already remitted - money you fronted',
+          description:
+              'Unpaid sales on batches already remitted - money you fronted',
         ),
       if (data.unsoldValue > 0)
         _StatTile(
@@ -385,9 +404,9 @@ class _MoneyCards extends StatelessWidget {
         label: 'Pending remittance',
         value: _currency.format(data.pendingRemittance),
         description: 'Revenue from batches not yet remitted',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const RemittanceScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const RemittanceScreen())),
       ),
       _StatTile(
         label: 'This week revenue',
@@ -395,8 +414,7 @@ class _MoneyCards extends StatelessWidget {
         description: 'Business sales, Monday to today',
       ),
       _StatTile(
-        label:
-            'Last week (${trend >= 0 ? '+' : ''}${_currency.format(trend)})',
+        label: 'Last week (${trend >= 0 ? '+' : ''}${_currency.format(trend)})',
         value: _currency.format(data.lastWeekRevenue),
         description: 'Prior full week, vs. this week',
       ),
@@ -510,9 +528,7 @@ class _MoneyCards extends StatelessWidget {
         value: '${data.personalUnitsConsumed}',
         description: 'Units consumed or given away from personal batches',
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const PersonalActivityScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const PersonalActivityScreen()),
         ),
       ),
     ];
@@ -523,31 +539,41 @@ class _MoneyCards extends StatelessWidget {
 
   List<Widget> _allTiles(BuildContext context) {
     void goToBatches(BatchFilter filter) => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => BatchesListScreen(initialFilter: filter),
-          ),
-        );
+      MaterialPageRoute(
+        builder: (_) => BatchesListScreen(initialFilter: filter),
+      ),
+    );
     final unsoldValue = data.unsoldValue + data.personalUnsoldValue;
     final allTimeRevenue = data.allTimeRevenue + data.personalRevenue;
     final thisMonthProfit = _sumNullable(
-        data.thisMonthEstimatedProfit, data.personalThisMonthEstimatedProfit);
-    final allTimeProfit =
-        _sumNullable(data.allTimeEstimatedProfit, data.personalEstimatedProfit);
+      data.thisMonthEstimatedProfit,
+      data.personalThisMonthEstimatedProfit,
+    );
+    final allTimeProfit = _sumNullable(
+      data.allTimeEstimatedProfit,
+      data.personalEstimatedProfit,
+    );
     final receivables =
         data.outstandingReceivables + data.personalOutstandingReceivables;
     // Personal batches rarely carry real sale revenue, so - same as the
     // trend chart's "All" - these use personal value *produced* in the
     // period as the personal contribution, not personal sale revenue.
     final personalWeekly = data.personalWeeklyTrend;
-    final thisWeekAll =
-        data.thisWeekRevenue + personalWeekly.last.revenue;
-    final lastWeekAll = data.lastWeekRevenue +
+    final thisWeekAll = data.thisWeekRevenue + personalWeekly.last.revenue;
+    final lastWeekAll =
+        data.lastWeekRevenue +
         personalWeekly[personalWeekly.length - 2].revenue;
     final trend = thisWeekAll - lastWeekAll;
     final thisMonthAll =
         data.thisMonthRevenue + data.personalMonthlyTrend.last.revenue;
 
     return <Widget>[
+      _StatTile(
+        label: 'Batches created (all time)',
+        value: '${data.batchCount}',
+        description: 'Total batches recorded, business + personal',
+        onTap: () => goToBatches(BatchFilter.all),
+      ),
       _StatTile(
         label: 'Outstanding receivables',
         value: _currency.format(receivables),
@@ -557,7 +583,8 @@ class _MoneyCards extends StatelessWidget {
         _StatTile(
           label: 'Fronted (remitted, uncollected)',
           value: _currency.format(data.frontedAmount),
-          description: 'Unpaid sales on batches already remitted - money you fronted',
+          description:
+              'Unpaid sales on batches already remitted - money you fronted',
         ),
       if (unsoldValue > 0)
         _StatTile(
@@ -570,29 +597,32 @@ class _MoneyCards extends StatelessWidget {
         label: 'Pending remittance',
         value: _currency.format(data.pendingRemittance),
         description: 'Revenue from batches not yet remitted',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const RemittanceScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const RemittanceScreen())),
       ),
       _StatTile(
         label: 'This week revenue',
         value: _currency.format(thisWeekAll),
-        description: 'Business sales + personal value produced, Monday to today',
+        description:
+            'Business sales + personal value produced, Monday to today',
       ),
       _StatTile(
-        label:
-            'Last week (${trend >= 0 ? '+' : ''}${_currency.format(trend)})',
+        label: 'Last week (${trend >= 0 ? '+' : ''}${_currency.format(trend)})',
         value: _currency.format(lastWeekAll),
         description: 'Prior full week, vs. this week',
       ),
       _StatTile(
         label: 'This month revenue',
         value: _currency.format(thisMonthAll),
-        description: 'Business sales + personal value produced, 1st of month to today',
+        description:
+            'Business sales + personal value produced, 1st of month to today',
       ),
       _StatTile(
         label: 'Est. profit (this month)',
-        value: thisMonthProfit == null ? '-' : _currency.format(thisMonthProfit),
+        value: thisMonthProfit == null
+            ? '-'
+            : _currency.format(thisMonthProfit),
         description: thisMonthProfit == null
             ? 'Set a unit cost on a batch to see this'
             : 'Revenue minus cost, business + personal, this month',
@@ -732,7 +762,7 @@ class _TrendChartState extends State<_TrendChart> {
         values = [
           for (var i = 0; i < data.dailyTrend.length; i++)
             (includeBaking ? data.dailyTrend[i].revenue : 0) +
-                (includePersonal ? data.personalDailyTrend[i].revenue : 0)
+                (includePersonal ? data.personalDailyTrend[i].revenue : 0),
         ];
         labels = [for (final d in data.dailyTrend) _dayLetter(d.day)];
         break;
@@ -740,22 +770,22 @@ class _TrendChartState extends State<_TrendChart> {
         values = [
           for (var i = 0; i < data.eightWeekTrend.length; i++)
             (includeBaking ? data.eightWeekTrend[i].revenue : 0) +
-                (includePersonal ? data.personalWeeklyTrend[i].revenue : 0)
+                (includePersonal ? data.personalWeeklyTrend[i].revenue : 0),
         ];
         labels = [
           for (final w in data.eightWeekTrend)
-            DateFormat('M/d').format(w.weekStart)
+            DateFormat('M/d').format(w.weekStart),
         ];
         break;
       case _TrendPeriod.monthly:
         values = [
           for (var i = 0; i < data.monthlyTrend.length; i++)
             (includeBaking ? data.monthlyTrend[i].revenue : 0) +
-                (includePersonal ? data.personalMonthlyTrend[i].revenue : 0)
+                (includePersonal ? data.personalMonthlyTrend[i].revenue : 0),
         ];
         labels = [
           for (final m in data.monthlyTrend)
-            DateFormat('MMM').format(m.monthStart)
+            DateFormat('MMM').format(m.monthStart),
         ];
         break;
     }
@@ -769,14 +799,11 @@ class _TrendChartState extends State<_TrendChart> {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                switch (widget.moneyFilter) {
-                  _MoneyFilter.baking => 'Showing: Baking',
-                  _MoneyFilter.personal => 'Showing: Personal',
-                  _MoneyFilter.all => 'Showing: All',
-                },
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+              child: Text(switch (widget.moneyFilter) {
+                _MoneyFilter.baking => 'Showing: Baking',
+                _MoneyFilter.personal => 'Showing: Personal',
+                _MoneyFilter.all => 'Showing: All',
+              }, style: Theme.of(context).textTheme.labelSmall),
             ),
             const SizedBox(height: 4),
             SegmentedButton<_TrendPeriod>(
@@ -812,9 +839,11 @@ class _TrendChartState extends State<_TrendChart> {
                   maxY: maxY * 1.2,
                   titlesData: FlTitlesData(
                     topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
                     rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -839,14 +868,17 @@ class _TrendChartState extends State<_TrendChart> {
                   gridData: const FlGridData(show: false),
                   barGroups: [
                     for (var i = 0; i < values.length; i++)
-                      BarChartGroupData(x: i, barRods: [
-                        BarChartRodData(
-                          toY: values[i],
-                          color: Theme.of(context).colorScheme.primary,
-                          width: _period == _TrendPeriod.daily ? 10 : 16,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ]),
+                      BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(
+                            toY: values[i],
+                            color: Theme.of(context).colorScheme.primary,
+                            width: _period == _TrendPeriod.daily ? 10 : 16,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -883,37 +915,31 @@ class _CustomerCards extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openLedger(context, data.customerOfTheMonth!.id),
           ),
-        _NamedList(
-          'Most loyal',
-          [
-            for (final s in data.mostLoyal)
-              _Entry('${s.customer.name} (${s.value.toInt()} orders)',
-                  onTap: () => _openLedger(context, s.customer.id)),
-          ],
-        ),
-        _NamedList(
-          'Top spenders',
-          [
-            for (final s in data.topSpenders)
-              _Entry('${s.customer.name} (${_currency.format(s.value)})',
-                  onTap: () => _openLedger(context, s.customer.id)),
-          ],
-        ),
-        _NamedList(
-          'Top unpaid balances',
-          [
-            for (final s in data.topUnpaidBalances)
-              _Entry('${s.customer.name} (${_currency.format(s.value)})',
-                  onTap: () => _openLedger(context, s.customer.id)),
-          ],
-        ),
-        _NamedList(
-          'At-risk (30+ days)',
-          [
-            for (final c in data.atRisk)
-              _Entry(c.name, onTap: () => _openLedger(context, c.id)),
-          ],
-        ),
+        _NamedList('Most loyal', [
+          for (final s in data.mostLoyal)
+            _Entry(
+              '${s.customer.name} (${s.value.toInt()} orders)',
+              onTap: () => _openLedger(context, s.customer.id),
+            ),
+        ]),
+        _NamedList('Top spenders', [
+          for (final s in data.topSpenders)
+            _Entry(
+              '${s.customer.name} (${_currency.format(s.value)})',
+              onTap: () => _openLedger(context, s.customer.id),
+            ),
+        ]),
+        _NamedList('Top unpaid balances', [
+          for (final s in data.topUnpaidBalances)
+            _Entry(
+              '${s.customer.name} (${_currency.format(s.value)})',
+              onTap: () => _openLedger(context, s.customer.id),
+            ),
+        ]),
+        _NamedList('At-risk (30+ days)', [
+          for (final c in data.atRisk)
+            _Entry(c.name, onTap: () => _openLedger(context, c.id)),
+        ]),
       ],
     );
   }
@@ -936,33 +962,38 @@ class _ProductCards extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _NamedList(
-          'Best-seller by units',
-          [
-            for (final s in data.bestSellerByUnits)
-              _Entry('${s.product.title} (${s.value.toInt()} units)',
-                  imageUrl: s.product.imageUrl,
-                  onTap: () => _openBatchesForProduct(context, s.product.title)),
-          ],
-        ),
-        _NamedList(
-          'Best-seller by revenue',
-          [
-            for (final s in data.bestSellerByRevenue)
-              _Entry('${s.product.title} (${_currency.format(s.value)})',
-                  imageUrl: s.product.imageUrl,
-                  onTap: () => _openBatchesForProduct(context, s.product.title)),
-          ],
-        ),
-        _NamedList(
-          'Unsold / overproduction watchlist',
-          [
-            for (final s in data.unsoldWatchlist)
-              _Entry('${s.product.title} (${s.value.toInt()} unsold)',
-                  imageUrl: s.product.imageUrl,
-                  onTap: () => _openBatchesForProduct(context, s.product.title)),
-          ],
-        ),
+        _NamedList('Best-seller by units', [
+          for (final s in data.bestSellerByUnits)
+            _Entry(
+              '${s.product.title} (${s.value.toInt()} units)',
+              imageUrl: s.product.imageUrl,
+              onTap: () => _openBatchesForProduct(context, s.product.title),
+            ),
+        ]),
+        _NamedList('Best-seller by revenue', [
+          for (final s in data.bestSellerByRevenue)
+            _Entry(
+              '${s.product.title} (${_currency.format(s.value)})',
+              imageUrl: s.product.imageUrl,
+              onTap: () => _openBatchesForProduct(context, s.product.title),
+            ),
+        ]),
+        _NamedList('Best profit per piece', [
+          for (final s in data.bestProfitPerPiece)
+            _Entry(
+              '${s.product.title} (${_currency.format(s.value)}/pc)',
+              imageUrl: s.product.imageUrl,
+              onTap: () => _openBatchesForProduct(context, s.product.title),
+            ),
+        ]),
+        _NamedList('Unsold / overproduction watchlist', [
+          for (final s in data.unsoldWatchlist)
+            _Entry(
+              '${s.product.title} (${s.value.toInt()} unsold)',
+              imageUrl: s.product.imageUrl,
+              onTap: () => _openBatchesForProduct(context, s.product.title),
+            ),
+        ]),
       ],
     );
   }
@@ -982,31 +1013,30 @@ class _OperationsCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     String label(Batch b) {
-      final title = appState.productById(b.productId)?.title ?? 'Unknown product';
+      final title =
+          appState.productById(b.productId)?.title ?? 'Unknown product';
       return '$title - ${appDateFormat.format(b.batchDate)}';
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _NamedList(
-          'Batches awaiting remittance',
-          [
-            for (final b in data.batchesAwaitingRemittance)
-              _Entry(label(b),
-                  imageUrl: appState.productById(b.productId)?.imageUrl,
-                  onTap: () => _openBatch(context, b.id)),
-          ],
-        ),
-        _NamedList(
-          'Active batches with remaining quantity',
-          [
-            for (final b in data.activeBatches)
-              _Entry(label(b),
-                  imageUrl: appState.productById(b.productId)?.imageUrl,
-                  onTap: () => _openBatch(context, b.id)),
-          ],
-        ),
+        _NamedList('Batches awaiting remittance', [
+          for (final b in data.batchesAwaitingRemittance)
+            _Entry(
+              label(b),
+              imageUrl: appState.productById(b.productId)?.imageUrl,
+              onTap: () => _openBatch(context, b.id),
+            ),
+        ]),
+        _NamedList('Active batches with remaining quantity', [
+          for (final b in data.activeBatches)
+            _Entry(
+              label(b),
+              imageUrl: appState.productById(b.productId)?.imageUrl,
+              onTap: () => _openBatch(context, b.id),
+            ),
+        ]),
       ],
     );
   }
@@ -1030,7 +1060,8 @@ class _PersonalGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     String label(Batch b) {
-      final title = appState.productById(b.productId)?.title ?? 'Unknown product';
+      final title =
+          appState.productById(b.productId)?.title ?? 'Unknown product';
       return '$title - ${appDateFormat.format(b.batchDate)}';
     }
 
@@ -1038,7 +1069,9 @@ class _PersonalGroup extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.35),
+        color: Theme.of(
+          context,
+        ).colorScheme.secondaryContainer.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1046,7 +1079,11 @@ class _PersonalGroup extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.person, size: 18, color: Theme.of(context).colorScheme.onSecondaryContainer),
+              Icon(
+                Icons.person,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
               const SizedBox(width: 8),
               Text('Personal', style: Theme.of(context).textTheme.titleLarge),
             ],
@@ -1058,31 +1095,27 @@ class _PersonalGroup extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          _NamedList(
-            'Personal batches with remaining stock',
-            [
-              for (final b in data.personalActiveBatches)
-                _Entry(label(b),
-                    imageUrl: appState.productById(b.productId)?.imageUrl,
-                    onTap: () => _openBatch(context, b.id)),
-            ],
-          ),
-          _NamedList(
-            'Personal unsold watchlist',
-            [
-              for (final s in data.personalUnsoldWatchlist)
-                _Entry(
-                  '${s.product.title} (${s.value.toInt()} unsold)',
-                  imageUrl: s.product.imageUrl,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          BatchesListScreen(initialSearch: s.product.title),
-                    ),
+          _NamedList('Personal batches with remaining stock', [
+            for (final b in data.personalActiveBatches)
+              _Entry(
+                label(b),
+                imageUrl: appState.productById(b.productId)?.imageUrl,
+                onTap: () => _openBatch(context, b.id),
+              ),
+          ]),
+          _NamedList('Personal unsold watchlist', [
+            for (final s in data.personalUnsoldWatchlist)
+              _Entry(
+                '${s.product.title} (${s.value.toInt()} unsold)',
+                imageUrl: s.product.imageUrl,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        BatchesListScreen(initialSearch: s.product.title),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ]),
         ],
       ),
     );
@@ -1119,8 +1152,10 @@ class _NamedList extends StatelessWidget {
               InkWell(
                 onTap: item.onTap,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       if (item.imageUrl != null) ...[
