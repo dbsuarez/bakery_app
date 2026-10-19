@@ -1,342 +1,249 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'restore_report.dart';
 
-String _normalize(String s) => s.trim().toLowerCase();
-String? _dateOnly(String? iso) =>
-    iso == null ? null : DateTime.parse(iso).toIso8601String().split('T').first;
+class BackupRestorePreview {
+  final DateTime exportedAt;
+  final int rowCount;
+  final int staleConflictCount;
 
-/// Restores a JSON backup produced by `backup_service.dart` directly into
-/// Supabase. Safe to re-run: rows are matched first by `remote_id` (the
-/// Supabase row's own id, so this is really a same-row update once synced),
-/// then by a natural key (product title, customer name, batch/sale
-/// `legacy_id`), so restoring the same backup twice - or restoring an older
-/// backup on top of newer data - updates matching rows instead of
-/// duplicating them.
+  const BackupRestorePreview({
+    required this.exportedAt,
+    required this.rowCount,
+    required this.staleConflictCount,
+  });
+
+  bool get hasStaleConflicts => staleConflictCount > 0;
+}
+
+/// Validates backup v2 completely before asking PostgreSQL to restore it in
+/// one transaction. Version 1 backups are intentionally rejected because
+/// they omit financial ledgers and cannot produce a complete restore.
 class BackupRestoreService {
   final SupabaseClient client;
   const BackupRestoreService(this.client);
 
-  Future<RestoreReport> restore(Uint8List bytes) async {
-    final report = RestoreReport();
-    final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+  Future<BackupRestorePreview> preview(Uint8List bytes) async {
+    final payload = decodeBackupPayload(bytes);
+    final backup = decodeAndValidateBackupV2(payload.jsonBytes);
+    final value = await client.rpc(
+      'preview_backup_v2',
+      params: {'p_backup': backup},
+    );
+    final result = Map<String, dynamic>.from(value as Map);
+    return BackupRestorePreview(
+      exportedAt: DateTime.parse(backup['exported_at'] as String),
+      rowCount: result['row_count'] as int? ?? 0,
+      staleConflictCount: result['stale_conflicts'] as int? ?? 0,
+    );
+  }
 
-    final productIds = await _restoreProducts(
-      (data['products'] as List?) ?? [],
-      report,
+  Future<RestoreReport> restore(
+    Uint8List bytes, {
+    bool allowStaleOverwrite = false,
+  }) async {
+    final payload = decodeBackupPayload(bytes);
+    final backup = decodeAndValidateBackupV2(payload.jsonBytes);
+    final value = await client.rpc(
+      'restore_backup_v2',
+      params: {'p_backup': backup, 'p_allow_stale': allowStaleOverwrite},
     );
-    final customerIds = await _restoreCustomers(
-      (data['customers'] as List?) ?? [],
-      report,
+    final report = RestoreReport.fromJson(
+      Map<String, dynamic>.from(value as Map),
     );
-    final batchIds = await _restoreBatches(
-      (data['batches'] as List?) ?? [],
-      productIds,
-      report,
-    );
-    await _restoreSales(
-      (data['sales'] as List?) ?? [],
-      batchIds,
-      customerIds,
-      report,
-    );
-
+    if (payload.media.isNotEmpty) {
+      final uid = client.auth.currentUser!.id;
+      var restored = 0;
+      for (final entry in payload.media.entries) {
+        final separator = entry.key.indexOf('/');
+        if (separator < 1) continue;
+        final bucket = entry.key.substring(0, separator);
+        final name = entry.key.substring(separator + 1);
+        if (name.isEmpty || name.contains('..') || name.contains('\\')) {
+          report.add('Skipped unsafe media path: media/${entry.key}');
+          continue;
+        }
+        try {
+          await client.storage
+              .from(bucket)
+              .uploadBinary(
+                '$uid/$name',
+                entry.value,
+                fileOptions: const FileOptions(upsert: true),
+              );
+          restored++;
+        } catch (error) {
+          report.add('Could not restore media/$bucket/$name: $error');
+        }
+      }
+      report.add('$restored of ${payload.media.length} media files restored.');
+    }
     return report;
   }
+}
 
-  Future<Map<int, String>> _restoreProducts(
-    List raw,
-    RestoreReport report,
-  ) async {
-    final idMap = <int, String>{};
-    final existing = await client
-        .from('products')
-        .select('id, title, image_url, category, is_archived');
-    final byId = {for (final r in existing) r['id'] as String: r};
-    final byTitle = {
-      for (final r in existing) _normalize(r['title'] as String): r,
-    };
+class BackupPayload {
+  final Uint8List jsonBytes;
+  final Map<String, Uint8List> media;
 
-    for (final entry in raw) {
-      final m = entry as Map<String, dynamic>;
-      final oldId = m['id'] as int;
-      final title = m['title'] as String? ?? '';
-      if (title.isEmpty) {
-        report.add('A backed-up product has no title; skipped');
-        continue;
+  const BackupPayload({required this.jsonBytes, required this.media});
+}
+
+/// Accepts new media-inclusive ZIP archives and existing version 2 JSON files.
+BackupPayload decodeBackupPayload(Uint8List bytes) {
+  final isZip = bytes.length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4b;
+  if (!isZip) return BackupPayload(jsonBytes: bytes, media: const {});
+
+  final archive = ZipDecoder().decodeBytes(bytes);
+  Uint8List? jsonBytes;
+  final media = <String, Uint8List>{};
+  for (final file in archive.files.where((file) => file.isFile)) {
+    final content = Uint8List.fromList(file.content as List<int>);
+    if (file.name == 'backup.json') {
+      jsonBytes = content;
+    } else if (file.name.startsWith('media/')) {
+      final relative = file.name.substring('media/'.length);
+      if (relative.startsWith('product-photos/') ||
+          relative.startsWith('qr-codes/')) {
+        final separator = relative.indexOf('/');
+        final name = separator < 0 ? '' : relative.substring(separator + 1);
+        if (name.isNotEmpty && !name.contains('..') && !name.contains('\\')) {
+          media[relative] = content;
+        }
       }
-      final remoteId = m['remote_id'] as String?;
-      final imageUrl = m['image_url'] as String?;
-      // Older backups predate categories/archiving - default to the same
-      // values a freshly-created product would get.
-      final category = m['category'] as String? ?? 'bakery';
-      final isArchived = m['is_archived'] as bool? ?? false;
-
-      final match = (remoteId != null ? byId[remoteId] : null) ??
-          byTitle[_normalize(title)];
-
-      if (match == null) {
-        final inserted = await client
-            .from('products')
-            .insert({
-              'title': title,
-              'image_url': imageUrl,
-              'category': category,
-              'is_archived': isArchived,
-            })
-            .select('id')
-            .single();
-        idMap[oldId] = inserted['id'] as String;
-        report.productsCreated++;
-        continue;
-      }
-
-      final matchId = match['id'] as String;
-      idMap[oldId] = matchId;
-      final changed = match['title'] != title ||
-          match['image_url'] != imageUrl ||
-          match['category'] != category ||
-          match['is_archived'] != isArchived;
-      if (!changed) {
-        report.productsUnchanged++;
-        continue;
-      }
-      await client.from('products').update({
-        'title': title,
-        'image_url': imageUrl,
-        'category': category,
-        'is_archived': isArchived,
-      }).eq('id', matchId);
-      report.productsUpdated++;
     }
-    return idMap;
+  }
+  if (jsonBytes == null) {
+    throw const FormatException('The backup archive is missing backup.json.');
+  }
+  return BackupPayload(jsonBytes: jsonBytes, media: media);
+}
+
+const _backupV2ListKeys = <String>[
+  'products',
+  'customers',
+  'batches',
+  'sales',
+  'sale_payments',
+  'customer_credits',
+  'loyalty_adjustments',
+  'expenses',
+  'customer_favorites',
+  'favorite_dismissals',
+];
+
+/// Decodes and completely validates a backup before any network request or
+/// database mutation is attempted.
+Map<String, dynamic> decodeAndValidateBackupV2(Uint8List bytes) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(utf8.decode(bytes));
+  } catch (_) {
+    throw const FormatException('The selected file is not valid JSON.');
+  }
+  if (decoded is! Map) {
+    throw const FormatException('The backup root must be a JSON object.');
+  }
+  final backup = Map<String, dynamic>.from(decoded);
+  if (backup['version'] != 2) {
+    throw const FormatException(
+      'Unsupported or incomplete backup version. Export a new version 2 '
+      'backup before restoring.',
+    );
+  }
+  final exportedAt = backup['exported_at'];
+  if (exportedAt is! String || DateTime.tryParse(exportedAt) == null) {
+    throw const FormatException('The backup has an invalid export date.');
   }
 
-  Future<Map<int, String>> _restoreCustomers(
-    List raw,
-    RestoreReport report,
-  ) async {
-    final idMap = <int, String>{};
-    final existing = await client
-        .from('customers')
-        .select('id, name, phone, is_archived, group_name');
-    final byId = {for (final r in existing) r['id'] as String: r};
-    final byName = {
-      for (final r in existing) _normalize(r['name'] as String): r,
-    };
-
-    for (final entry in raw) {
-      final m = entry as Map<String, dynamic>;
-      final oldId = m['id'] as int;
-      final name = m['name'] as String? ?? '';
-      if (name.isEmpty) {
-        report.add('A backed-up customer has no name; skipped');
-        continue;
-      }
-      final remoteId = m['remote_id'] as String?;
-      final phone = m['phone'] as String?;
-      final isArchived = m['is_archived'] as bool? ?? false;
-      final groupName = m['group_name'] as String?;
-
-      final match =
-          (remoteId != null ? byId[remoteId] : null) ?? byName[_normalize(name)];
-
-      if (match == null) {
-        final inserted = await client
-            .from('customers')
-            .insert({
-              'name': name,
-              'phone': phone,
-              'is_archived': isArchived,
-              'group_name': groupName,
-            })
-            .select('id')
-            .single();
-        idMap[oldId] = inserted['id'] as String;
-        report.customersCreated++;
-        continue;
-      }
-
-      final matchId = match['id'] as String;
-      idMap[oldId] = matchId;
-      final changed = match['name'] != name ||
-          match['phone'] != phone ||
-          match['is_archived'] != isArchived ||
-          match['group_name'] != groupName;
-      if (!changed) {
-        report.customersUnchanged++;
-        continue;
-      }
-      await client.from('customers').update({
-        'name': name,
-        'phone': phone,
-        'is_archived': isArchived,
-        'group_name': groupName,
-      }).eq('id', matchId);
-      report.customersUpdated++;
+  for (final key in _backupV2ListKeys) {
+    final rows = backup[key];
+    if (rows is! List) {
+      throw FormatException('The backup is missing the "$key" list.');
     }
-    return idMap;
+    for (var index = 0; index < rows.length; index++) {
+      if (rows[index] is! Map) {
+        throw FormatException('$key row ${index + 1} is not an object.');
+      }
+    }
   }
 
-  Future<Map<int, String>> _restoreBatches(
-    List raw,
-    Map<int, String> productIds,
-    RestoreReport report,
-  ) async {
-    final idMap = <int, String>{};
-    final existing = await client.from('batches').select(
-        'id, legacy_id, product_id, batch_date, count_produced, unit_price, unit_cost, total_value, remitted, date_remitted, locked, is_personal');
-    final byId = {for (final r in existing) r['id'] as String: r};
-    final byLegacy = <int, Map<String, dynamic>>{
-      for (final r in existing)
-        if (r['legacy_id'] != null) r['legacy_id'] as int: r,
-    };
+  final productIds = _entityIds(backup, 'products');
+  final customerIds = _entityIds(backup, 'customers');
+  final batchIds = _entityIds(backup, 'batches');
+  final saleIds = _entityIds(backup, 'sales');
+  _entityIds(backup, 'sale_payments');
+  _entityIds(backup, 'customer_credits');
+  _entityIds(backup, 'loyalty_adjustments');
+  _entityIds(backup, 'expenses');
 
-    for (final entry in raw) {
-      final m = entry as Map<String, dynamic>;
-      final oldId = m['id'] as int;
-      final oldProductId = m['product_id'] as int;
-      final newProductId = productIds[oldProductId];
-      if (newProductId == null) {
-        report.add('A backed-up batch references a product that could not '
-            'be restored; skipped');
-        continue;
-      }
-      final remoteId = m['remote_id'] as String?;
-      final legacyId = m['legacy_id'] as int?;
-      final batchDate = _dateOnly(m['batch_date'] as String)!;
-      final countProduced = m['count_produced'] as int;
-      final unitPrice = (m['unit_price'] as num).toDouble();
-      final unitCost = (m['unit_cost'] as num?)?.toDouble() ?? 0;
-      final totalValue = (m['total_value'] as num).toDouble();
-      final remitted = m['remitted'] as bool? ?? false;
-      final dateRemitted = _dateOnly(m['date_remitted'] as String?);
-      final locked = m['locked'] as bool? ?? false;
-      final isPersonal = m['is_personal'] as bool? ?? false;
+  _requireReferences(backup, 'batches', 'product_id', productIds);
+  _requireReferences(backup, 'sales', 'batch_id', batchIds);
+  _requireReferences(backup, 'sales', 'customer_id', customerIds);
+  _requireReferences(backup, 'sale_payments', 'sale_id', saleIds);
+  _requireReferences(backup, 'customer_credits', 'customer_id', customerIds);
+  _requireOptionalReferences(backup, 'customer_credits', 'sale_id', saleIds);
+  _requireReferences(backup, 'loyalty_adjustments', 'customer_id', customerIds);
+  _requireReferences(backup, 'customer_favorites', 'customer_id', customerIds);
+  _requireReferences(backup, 'customer_favorites', 'product_id', productIds);
+  _requireReferences(backup, 'favorite_dismissals', 'customer_id', customerIds);
+  _requireReferences(backup, 'favorite_dismissals', 'batch_id', batchIds);
+  return backup;
+}
 
-      final match = (remoteId != null ? byId[remoteId] : null) ??
-          (legacyId != null ? byLegacy[legacyId] : null);
-
-      final payload = {
-        'product_id': newProductId,
-        'legacy_id': legacyId,
-        'batch_date': batchDate,
-        'count_produced': countProduced,
-        'unit_price': unitPrice,
-        'unit_cost': unitCost,
-        'total_value': totalValue,
-        'remitted': remitted,
-        'date_remitted': dateRemitted,
-        'locked': locked,
-        'is_personal': isPersonal,
-      };
-
-      if (match == null) {
-        final inserted =
-            await client.from('batches').insert(payload).select('id').single();
-        idMap[oldId] = inserted['id'] as String;
-        report.batchesCreated++;
-        continue;
-      }
-
-      final matchId = match['id'] as String;
-      idMap[oldId] = matchId;
-      final changed = match['product_id'] != newProductId ||
-          match['batch_date'] != batchDate ||
-          match['count_produced'] != countProduced ||
-          (match['unit_price'] as num).toDouble() != unitPrice ||
-          (match['unit_cost'] as num).toDouble() != unitCost ||
-          (match['total_value'] as num).toDouble() != totalValue ||
-          match['remitted'] != remitted ||
-          match['date_remitted'] != dateRemitted ||
-          match['locked'] != locked ||
-          match['is_personal'] != isPersonal;
-      if (!changed) {
-        report.batchesUnchanged++;
-        continue;
-      }
-      await client.from('batches').update(payload).eq('id', matchId);
-      report.batchesUpdated++;
+Map<int, String> _entityIds(Map<String, dynamic> backup, String key) {
+  final result = <int, String>{};
+  for (final raw in backup[key] as List) {
+    final row = Map<String, dynamic>.from(raw as Map);
+    final localId = row['id'];
+    final remoteId = row['remote_id'];
+    if (localId is! int ||
+        remoteId is! String ||
+        !_uuidPattern.hasMatch(remoteId)) {
+      throw FormatException(
+        'Every $key row must have an integer id and valid remote_id.',
+      );
     }
-    return idMap;
+    if (result.containsKey(localId)) {
+      throw FormatException('The backup contains duplicate $key ids.');
+    }
+    result[localId] = remoteId;
   }
+  return result;
+}
 
-  Future<void> _restoreSales(
-    List raw,
-    Map<int, String> batchIds,
-    Map<int, String> customerIds,
-    RestoreReport report,
-  ) async {
-    final existing = await client.from('sales').select(
-        'id, legacy_id, batch_id, customer_id, sale_date, quantity, amount, paid, date_paid, sale_type, notes');
-    final byId = {for (final r in existing) r['id'] as String: r};
-    final byLegacy = <int, Map<String, dynamic>>{
-      for (final r in existing)
-        if (r['legacy_id'] != null) r['legacy_id'] as int: r,
-    };
-
-    for (final entry in raw) {
-      final m = entry as Map<String, dynamic>;
-      final oldBatchId = m['batch_id'] as int;
-      final oldCustomerId = m['customer_id'] as int;
-      final newBatchId = batchIds[oldBatchId];
-      final newCustomerId = customerIds[oldCustomerId];
-      if (newBatchId == null || newCustomerId == null) {
-        report.add('A backed-up transaction references a batch or customer '
-            'that could not be restored; skipped');
-        continue;
-      }
-      final remoteId = m['remote_id'] as String?;
-      final legacyId = m['legacy_id'] as int?;
-      final saleDate = _dateOnly(m['sale_date'] as String)!;
-      final quantity = m['quantity'] as int? ?? 1;
-      final amount = (m['amount'] as num).toDouble();
-      final paid = m['paid'] as bool? ?? false;
-      final datePaid = _dateOnly(m['date_paid'] as String?);
-      final saleType = m['sale_type'] as String? ?? 'customer_sale';
-      final notes = m['notes'] as String?;
-
-      final match = (remoteId != null ? byId[remoteId] : null) ??
-          (legacyId != null ? byLegacy[legacyId] : null);
-
-      final payload = {
-        'batch_id': newBatchId,
-        'customer_id': newCustomerId,
-        'legacy_id': legacyId,
-        'sale_date': saleDate,
-        'quantity': quantity,
-        'amount': amount,
-        'paid': paid,
-        'date_paid': datePaid,
-        'sale_type': saleType,
-        'notes': notes,
-      };
-
-      if (match == null) {
-        await client.from('sales').insert(payload);
-        report.salesCreated++;
-        continue;
-      }
-
-      final matchId = match['id'] as String;
-      final changed = match['batch_id'] != newBatchId ||
-          match['customer_id'] != newCustomerId ||
-          match['sale_date'] != saleDate ||
-          match['quantity'] != quantity ||
-          (match['amount'] as num).toDouble() != amount ||
-          match['paid'] != paid ||
-          match['date_paid'] != datePaid ||
-          match['sale_type'] != saleType ||
-          match['notes'] != notes;
-      if (!changed) {
-        report.salesUnchanged++;
-        continue;
-      }
-      await client.from('sales').update(payload).eq('id', matchId);
-      report.salesUpdated++;
+void _requireReferences(
+  Map<String, dynamic> backup,
+  String table,
+  String field,
+  Map<int, String> known,
+) {
+  for (final raw in backup[table] as List) {
+    final value = (raw as Map)[field];
+    if (value is! int || !known.containsKey(value)) {
+      throw FormatException('$table contains an unknown $field reference.');
     }
   }
 }
+
+void _requireOptionalReferences(
+  Map<String, dynamic> backup,
+  String table,
+  String field,
+  Map<int, String> known,
+) {
+  for (final raw in backup[table] as List) {
+    final value = (raw as Map)[field];
+    if (value != null && (value is! int || !known.containsKey(value))) {
+      throw FormatException('$table contains an unknown $field reference.');
+    }
+  }
+}
+
+final _uuidPattern = RegExp(
+  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+);

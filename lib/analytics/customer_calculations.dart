@@ -4,20 +4,22 @@ import '../models/customer_credit.dart';
 import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
+import '../utils/money.dart';
 
 /// Sum of a sale's non-deleted installment payments.
 double salePaidAmount(int saleId, List<SalePayment> payments) {
-  return payments
+  return sumMoney(payments
       .where((p) => p.saleId == saleId && !p.isDeleted)
-      .fold(0.0, (sum, p) => sum + p.amount);
+      .map((p) => p.amount));
 }
 
 /// How much of [sale] is still owed after any partial payments -
 /// [sale.amount] itself never changes; partial payments just chip away at
 /// what's outstanding until it flips to `paid`. Never negative.
 double saleRemainingAmount(Sale sale, List<SalePayment> payments) {
-  final remaining = sale.amount - salePaidAmount(sale.id, payments);
-  return remaining < 0 ? 0 : remaining;
+  final remaining = toCentavos(sale.amount) -
+      toCentavos(salePaidAmount(sale.id, payments));
+  return remaining < 0 ? 0 : fromCentavos(remaining);
 }
 
 /// Spec section 7 rule 6: customer balances include only unpaid
@@ -28,13 +30,13 @@ double customerBalance(
   List<Sale> sales, [
   List<SalePayment> payments = const [],
 ]) {
-  return sales
+  return sumMoney(sales
       .where((s) =>
           s.customerId == customerId &&
           !s.isDeleted &&
           !s.paid &&
           s.saleType == SaleType.customerSale)
-      .fold(0.0, (sum, s) => sum + saleRemainingAmount(s, payments));
+      .map((s) => saleRemainingAmount(s, payments)));
 }
 
 /// A customer's running credit balance - positive means the bakery owes
@@ -42,9 +44,9 @@ double customerBalance(
 /// would mean they owe a touch more (rare - a price increase after they'd
 /// paid). See [CustomerCredit] for how entries are created.
 double customerCreditBalance(int customerId, List<CustomerCredit> credits) {
-  return credits
+  return sumMoney(credits
       .where((c) => c.customerId == customerId && !c.isDeleted)
-      .fold(0.0, (sum, c) => sum + c.amount);
+      .map((c) => c.amount));
 }
 
 int customerOrderCount(int customerId, List<Sale> sales) {
@@ -57,12 +59,12 @@ int customerOrderCount(int customerId, List<Sale> sales) {
 }
 
 double customerTotalSpent(int customerId, List<Sale> sales) {
-  return sales
+  return sumMoney(sales
       .where((s) =>
           s.customerId == customerId &&
           !s.isDeleted &&
           s.saleType == SaleType.customerSale)
-      .fold(0.0, (sum, s) => sum + s.amount);
+      .map((s) => s.amount));
 }
 
 DateTime? customerLastOrderDate(int customerId, List<Sale> sales) {

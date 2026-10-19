@@ -11,6 +11,7 @@ import '../../models/sale.dart';
 import '../../repository/bakery_repository.dart';
 import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../widgets/product_avatar.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
@@ -27,6 +28,7 @@ class _Row {
   String? paymentMethod;
   String? notes;
   SaleType saleType;
+  bool isReservation;
 
   _Row({
     required this.customerId,
@@ -40,6 +42,7 @@ class _Row {
     this.paymentMethod,
     this.notes,
     this.saleType = SaleType.customerSale,
+    this.isReservation = false,
   });
 
   factory _Row.fromExisting(Sale sale) {
@@ -55,6 +58,7 @@ class _Row {
       paymentMethod: sale.paymentMethod,
       notes: sale.notes,
       saleType: sale.saleType,
+      isReservation: sale.isReservation,
     );
   }
 }
@@ -139,10 +143,12 @@ class _BatchAddTransactionsScreenState
     }
     final unlockedBatches = sortBatchesUnsoldFirstThenAlpha(
       appState.batches
-          .where((b) =>
-              !b.locked &&
-              !b.isDeleted &&
-              (b.id == _batchId || remainingQuantity(b, appState.sales) > 0))
+          .where(
+            (b) =>
+                !b.locked &&
+                !b.isDeleted &&
+                (b.id == _batchId || remainingQuantity(b, appState.sales) > 0),
+          )
           .toList(),
       appState.sales,
       appState.productById,
@@ -158,131 +164,134 @@ class _BatchAddTransactionsScreenState
         }
       },
       child: Scaffold(
-      appBar: AppBar(title: const Text('Batch Add Transactions')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<int>(
-              initialValue: _batchId,
-              decoration: const InputDecoration(labelText: 'Batch'),
-              items: [
-                for (final b in unlockedBatches)
-                  DropdownMenuItem(
-                    value: b.id,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ProductAvatar(
-                          imageUrl: appState.productById(b.productId)?.imageUrl,
-                          radius: 12,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            '${appDateFormat.format(b.batchDate)} - '
-                            '${appState.productById(b.productId)?.title ?? '?'}',
-                            overflow: TextOverflow.ellipsis,
+        appBar: AppBar(title: const Text('Batch Add Transactions')),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: DropdownButtonFormField<int>(
+                initialValue: _batchId,
+                decoration: const InputDecoration(labelText: 'Batch'),
+                items: [
+                  for (final b in unlockedBatches)
+                    DropdownMenuItem(
+                      value: b.id,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ProductAvatar(
+                            imageUrl: appState
+                                .productById(b.productId)
+                                ?.imageUrl,
+                            radius: 12,
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (v) => setState(() => _batchId = v),
-            ),
-          ),
-          if (batch != null) ...[
-            _BatchSummary(batch: batch),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search),
-                        hintText: 'Search customers...',
-                        isDense: true,
-                        suffixIcon: _search.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () => setState(() {
-                                  _search = '';
-                                  _searchController.clear();
-                                }),
-                              ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              '${appDateFormat.format(b.batchDate)} - '
+                              '${appState.productById(b.productId)?.title ?? '?'}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      onChanged: (v) => setState(() => _search = v),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => _selectAllVisible(appState),
-                    child: const Text('Select all'),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _prefillExisting(appState);
-                      _dirty = false;
-                    }),
-                    child: const Text('Clear all'),
-                  ),
                 ],
+                onChanged: (v) => setState(() => _batchId = v),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const Text('Default payment (new entries):'),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Unpaid'),
-                    selected: !_defaultPaid,
-                    onSelected: (_) => setState(() => _defaultPaid = false),
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Paid'),
-                    selected: _defaultPaid,
-                    onSelected: (_) => setState(() => _defaultPaid = true),
-                  ),
-                ],
+            if (batch != null) ...[
+              _BatchSummary(batch: batch),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Search customers...',
+                          isDense: true,
+                          suffixIcon: _search.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () => setState(() {
+                                    _search = '';
+                                    _searchController.clear();
+                                  }),
+                                ),
+                        ),
+                        onChanged: (v) => setState(() => _search = v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => _selectAllVisible(appState),
+                      child: const Text('Select all'),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _prefillExisting(appState);
+                        _dirty = false;
+                      }),
+                      child: const Text('Clear all'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: _CustomerList(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Text('Default payment (new entries):'),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Unpaid'),
+                      selected: !_defaultPaid,
+                      onSelected: (_) => setState(() => _defaultPaid = false),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Paid'),
+                      selected: _defaultPaid,
+                      onSelected: (_) => setState(() => _defaultPaid = true),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _CustomerList(
+                  batch: batch,
+                  search: _search,
+                  rows: _rows,
+                  existingByCustomer: _existingByCustomer(appState),
+                  onToggle: (customer) => _toggleCustomer(appState, customer),
+                  onRowChanged: () => setState(() => _dirty = true),
+                ),
+              ),
+              _SummaryBar(
                 batch: batch,
-                search: _search,
                 rows: _rows,
-                existingByCustomer: _existingByCustomer(appState),
-                onToggle: (customer) => _toggleCustomer(appState, customer),
-                onRowChanged: () => setState(() => _dirty = true),
+                onSave: () => _save(context, appState, batch),
               ),
-            ),
-            _SummaryBar(
-              batch: batch,
-              rows: _rows,
-              onSave: () => _save(context, appState, batch),
-            ),
-          ] else
-            const Expanded(
-              child: Center(child: Text('Select a batch to begin.')),
-            ),
-        ],
-      ),
+            ] else
+              const Expanded(
+                child: Center(child: Text('Select a batch to begin.')),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   void _selectAllVisible(AppState appState) {
-    final visible = appState.customers.where((c) =>
-        !c.isArchived &&
-        c.name.toLowerCase().contains(_search.toLowerCase()));
+    final visible = appState.customers.where(
+      (c) =>
+          !c.isArchived && c.name.toLowerCase().contains(_search.toLowerCase()),
+    );
     setState(() {
       for (final c in visible) {
         _rows.putIfAbsent(
@@ -313,10 +322,12 @@ class _BatchAddTransactionsScreenState
     }
 
     final existingSales = appState.sales
-        .where((s) =>
-            s.batchId == _batchId &&
-            s.customerId == customer.id &&
-            !s.isDeleted)
+        .where(
+          (s) =>
+              s.batchId == _batchId &&
+              s.customerId == customer.id &&
+              !s.isDeleted,
+        )
         .toList();
 
     if (existingSales.length == 1) {
@@ -328,13 +339,14 @@ class _BatchAddTransactionsScreenState
     }
 
     if (existingSales.length > 1) {
-      final totalQty =
-          existingSales.fold<int>(0, (sum, s) => sum + s.quantity);
+      final totalQty = existingSales.fold<int>(0, (sum, s) => sum + s.quantity);
       final choice = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('${customer.name} already has $totalQty unit(s) '
-              'across ${existingSales.length} transactions in this batch'),
+          title: Text(
+            '${customer.name} already has $totalQty unit(s) '
+            'across ${existingSales.length} transactions in this batch',
+          ),
           content: const Text('What would you like to do?'),
           actions: [
             TextButton(
@@ -374,11 +386,16 @@ class _BatchAddTransactionsScreenState
   }
 
   Future<void> _increaseExisting(AppState appState, int customerId) async {
-    final existingSales = appState.sales
-        .where((s) =>
-            s.batchId == _batchId && s.customerId == customerId && !s.isDeleted)
-        .toList()
-      ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
+    final existingSales =
+        appState.sales
+            .where(
+              (s) =>
+                  s.batchId == _batchId &&
+                  s.customerId == customerId &&
+                  !s.isDeleted,
+            )
+            .toList()
+          ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
     if (existingSales.isEmpty) return;
     final sale = existingSales.first;
     final controller = TextEditingController(text: '1');
@@ -408,22 +425,24 @@ class _BatchAddTransactionsScreenState
     if (addQty == null || addQty <= 0 || !mounted) return;
     final batch = appState.batchById(_batchId!);
     final newQty = sale.quantity + addQty;
-    final newAmount = sale.amount + (addQty * (batch?.unitPrice ?? 0));
+    final newAmount = fromCentavos(
+      toCentavos(sale.amount) + toCentavos(addQty * (batch?.unitPrice ?? 0)),
+    );
     await context.read<BakeryRepository>().updateSale(
-          Sale(
-            id: sale.id,
-            batchId: sale.batchId,
-            customerId: sale.customerId,
-            saleDate: sale.saleDate,
-            quantity: newQty,
-            amount: newAmount,
-            paid: sale.paid,
-            datePaid: sale.datePaid,
-            saleType: sale.saleType,
-            notes: sale.notes,
-            updatedAt: DateTime.now(),
-          ),
-        );
+      Sale(
+        id: sale.id,
+        batchId: sale.batchId,
+        customerId: sale.customerId,
+        saleDate: sale.saleDate,
+        quantity: newQty,
+        amount: newAmount,
+        paid: sale.paid,
+        datePaid: sale.datePaid,
+        saleType: sale.saleType,
+        notes: sale.notes,
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   Future<void> _save(
@@ -437,10 +456,12 @@ class _BatchAddTransactionsScreenState
     for (final r in _rows.values) {
       if (r.saleType != SaleType.customerSale) continue;
       final original = r.existingSale;
-      netNewQuantity +=
-          original == null ? r.quantity : (r.quantity - original.quantity);
+      netNewQuantity += original == null
+          ? r.quantity
+          : (r.quantity - original.quantity);
     }
     final allocated = allocatedQuantity(batch.id, appState.sales);
+    var allowOverallocate = false;
     if (allocated + netNewQuantity > batch.countProduced) {
       final proceed = await showDialog<bool>(
         context: context,
@@ -463,6 +484,7 @@ class _BatchAddTransactionsScreenState
         ),
       );
       if (proceed != true || !context.mounted) return;
+      allowOverallocate = true;
     }
 
     final newEntries = <BatchTransactionEntry>[];
@@ -472,42 +494,52 @@ class _BatchAddTransactionsScreenState
       final datePaid = r.paid ? (r.datePaid ?? DateTime.now()) : null;
       final original = r.existingSale;
       if (original == null) {
-        newEntries.add(BatchTransactionEntry(
-          customerId: r.customerId,
-          quantity: r.quantity,
-          amount: amount,
-          discount: r.discount,
-          paid: r.paid,
-          datePaid: datePaid,
-          paymentMethod: r.paid ? r.paymentMethod : null,
-          notes: r.notes,
-        ));
+        newEntries.add(
+          BatchTransactionEntry(
+            customerId: r.customerId,
+            quantity: r.quantity,
+            amount: amount,
+            discount: r.discount,
+            paid: r.paid,
+            datePaid: datePaid,
+            paymentMethod: r.paid ? r.paymentMethod : null,
+            notes: r.notes,
+            isReservation: r.isReservation,
+          ),
+        );
       } else {
-        updatedSales.add(Sale(
-          id: original.id,
-          batchId: original.batchId,
-          customerId: original.customerId,
-          saleDate: original.saleDate,
-          quantity: r.quantity,
-          amount: amount,
-          discount: r.discount,
-          paid: r.paid,
-          datePaid: datePaid,
-          paymentMethod: r.paid ? r.paymentMethod : null,
-          saleType: r.saleType,
-          notes: r.notes,
-          updatedAt: DateTime.now(),
-        ));
+        updatedSales.add(
+          Sale(
+            id: original.id,
+            batchId: original.batchId,
+            customerId: original.customerId,
+            saleDate: original.saleDate,
+            quantity: r.quantity,
+            amount: amount,
+            discount: r.discount,
+            paid: r.paid,
+            datePaid: datePaid,
+            paymentMethod: r.paid ? r.paymentMethod : null,
+            saleType: r.saleType,
+            notes: r.notes,
+            isReservation: r.isReservation,
+            updatedAt: DateTime.now(),
+          ),
+        );
       }
     }
 
     try {
       final repo = context.read<BakeryRepository>();
       for (final sale in updatedSales) {
-        await repo.updateSale(sale);
+        await repo.updateSale(sale, allowOverallocate: allowOverallocate);
       }
       if (newEntries.isNotEmpty) {
-        await repo.addBatchTransactions(batch.id, newEntries);
+        await repo.addBatchTransactions(
+          batch.id,
+          newEntries,
+          allowOverallocate: allowOverallocate,
+        );
       }
       // Meaningful confetti (spec section 12): the batch just sold out.
       if (allocated < batch.countProduced &&
@@ -528,8 +560,9 @@ class _BatchAddTransactionsScreenState
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -555,8 +588,10 @@ class _BatchSummary extends StatelessWidget {
                 children: [
                   ProductAvatar(imageUrl: product?.imageUrl, radius: 14),
                   const SizedBox(width: 8),
-                  Text(product?.title ?? '',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    product?.title ?? '',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ],
               ),
               Row(
@@ -566,8 +601,10 @@ class _BatchSummary extends StatelessWidget {
                   Text(_currency.format(batch.unitPrice)),
                 ],
               ),
-              Text('Produced: ${batch.countProduced} · '
-                  'Allocated: $allocated · Remaining: $remaining'),
+              Text(
+                'Produced: ${batch.countProduced} · '
+                'Allocated: $allocated · Remaining: $remaining',
+              ),
             ],
           ),
         );
@@ -607,19 +644,24 @@ class _CustomerList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, appState, _) {
-        final customers = appState.customers
-            .where((c) =>
-                !c.isArchived &&
-                c.name.toLowerCase().contains(search.toLowerCase()))
-            .toList()
-          ..sort((a, b) {
-            final aUnpaid =
-                (existingByCustomer[a.id] ?? const []).any((s) => !s.paid);
-            final bUnpaid =
-                (existingByCustomer[b.id] ?? const []).any((s) => !s.paid);
-            if (aUnpaid != bUnpaid) return aUnpaid ? -1 : 1;
-            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-          });
+        final customers =
+            appState.customers
+                .where(
+                  (c) =>
+                      !c.isArchived &&
+                      c.name.toLowerCase().contains(search.toLowerCase()),
+                )
+                .toList()
+              ..sort((a, b) {
+                final aUnpaid = (existingByCustomer[a.id] ?? const []).any(
+                  (s) => !s.paid,
+                );
+                final bUnpaid = (existingByCustomer[b.id] ?? const []).any(
+                  (s) => !s.paid,
+                );
+                if (aUnpaid != bUnpaid) return aUnpaid ? -1 : 1;
+                return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              });
 
         return ListView.builder(
           itemCount: customers.length,
@@ -631,10 +673,9 @@ class _CustomerList extends StatelessWidget {
                 existingSales != null && existingSales.isNotEmpty;
             return Container(
               color: alreadyInBatch
-                  ? Theme.of(context)
-                      .colorScheme
-                      .secondaryContainer
-                      .withValues(alpha: 0.3)
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.secondaryContainer.withValues(alpha: 0.3)
                   : null,
               child: Column(
                 children: [
@@ -647,11 +688,7 @@ class _CustomerList extends StatelessWidget {
                         : null,
                   ),
                   if (row != null)
-                    _RowEditor(
-                      batch: batch,
-                      row: row,
-                      onChanged: onRowChanged,
-                    ),
+                    _RowEditor(batch: batch, row: row, onChanged: onRowChanged),
                 ],
               ),
             );
@@ -666,8 +703,11 @@ class _RowEditor extends StatefulWidget {
   final Batch batch;
   final _Row row;
   final VoidCallback onChanged;
-  const _RowEditor(
-      {required this.batch, required this.row, required this.onChanged});
+  const _RowEditor({
+    required this.batch,
+    required this.row,
+    required this.onChanged,
+  });
 
   @override
   State<_RowEditor> createState() => _RowEditorState();
@@ -686,8 +726,9 @@ class _RowEditorState extends State<_RowEditor> {
           ? widget.row.amount.toStringAsFixed(2)
           : (widget.row.quantity * widget.batch.unitPrice).toStringAsFixed(2),
     );
-    _discountController =
-        TextEditingController(text: widget.row.discount.toStringAsFixed(2));
+    _discountController = TextEditingController(
+      text: widget.row.discount.toStringAsFixed(2),
+    );
     _notesController = TextEditingController(text: widget.row.notes);
   }
 
@@ -716,10 +757,9 @@ class _RowEditorState extends State<_RowEditor> {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 'Editing existing transaction',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(fontStyle: FontStyle.italic),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(fontStyle: FontStyle.italic),
               ),
             ),
           Row(
@@ -728,8 +768,10 @@ class _RowEditorState extends State<_RowEditor> {
                 icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () => _setQuantity(row.quantity - 1),
               ),
-              Text('${row.quantity}',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '${row.quantity}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline),
                 onPressed: () => _setQuantity(row.quantity + 1),
@@ -755,8 +797,9 @@ class _RowEditorState extends State<_RowEditor> {
                 child: TextField(
                   controller: _amountController,
                   decoration: const InputDecoration(labelText: 'Final amount'),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   onChanged: (v) {
                     final n = double.tryParse(v);
                     if (n != null) {
@@ -774,10 +817,12 @@ class _RowEditorState extends State<_RowEditor> {
               Expanded(
                 child: TextField(
                   controller: _discountController,
-                  decoration:
-                      const InputDecoration(labelText: 'Discount (optional)'),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Discount (optional)',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   onChanged: (v) {
                     row.discount = double.tryParse(v) ?? 0;
                     widget.onChanged();
@@ -820,24 +865,43 @@ class _RowEditorState extends State<_RowEditor> {
               },
             ),
           if (row.paid)
-            Builder(builder: (context) {
-              final methods =
-                  context.watch<BusinessSettingsController>().paymentMethods;
-              if (methods.isEmpty) return const SizedBox.shrink();
-              row.paymentMethod ??= methods.first;
-              return DropdownButtonFormField<String>(
-                initialValue: row.paymentMethod,
-                decoration: const InputDecoration(labelText: 'Payment method'),
-                items: [
-                  for (final m in methods)
-                    DropdownMenuItem(value: m, child: Text(m)),
-                ],
-                onChanged: (v) {
-                  setState(() => row.paymentMethod = v);
-                  widget.onChanged();
-                },
-              );
-            }),
+            Builder(
+              builder: (context) {
+                final methods = context
+                    .watch<BusinessSettingsController>()
+                    .paymentMethods;
+                if (methods.isEmpty) return const SizedBox.shrink();
+                row.paymentMethod ??= methods.first;
+                return DropdownButtonFormField<String>(
+                  initialValue: row.paymentMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment method',
+                  ),
+                  items: [
+                    for (final m in methods)
+                      DropdownMenuItem(value: m, child: Text(m)),
+                  ],
+                  onChanged: (v) {
+                    setState(() => row.paymentMethod = v);
+                    widget.onChanged();
+                  },
+                );
+              },
+            ),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text('Reservation'),
+            subtitle: const Text(
+              'Committed before the batch is actually ready/in stock',
+            ),
+            value: row.isReservation,
+            onChanged: (v) {
+              setState(() => row.isReservation = v ?? false);
+              widget.onChanged();
+            },
+          ),
           TextField(
             controller: _notesController,
             decoration: const InputDecoration(labelText: 'Notes (optional)'),
@@ -857,26 +921,32 @@ class _SummaryBar extends StatelessWidget {
   final Map<int, _Row> rows;
   final VoidCallback onSave;
 
-  const _SummaryBar(
-      {required this.batch, required this.rows, required this.onSave});
+  const _SummaryBar({
+    required this.batch,
+    required this.rows,
+    required this.onSave,
+  });
 
   @override
   Widget build(BuildContext context) {
     final newRows = rows.values.where((r) => r.existingSale == null).toList();
-    final updatedRows =
-        rows.values.where((r) => r.existingSale != null).toList();
+    final updatedRows = rows.values
+        .where((r) => r.existingSale != null)
+        .toList();
     final totalQty = rows.values.fold<int>(0, (s, r) => s + r.quantity);
-    final totalAmount = rows.values.fold<double>(
-        0,
-        (s, r) =>
-            s + (r.amountEdited ? r.amount : r.quantity * batch.unitPrice));
+    final totalAmount = sumMoney(
+      rows.values.map(
+        (r) => r.amountEdited ? r.amount : r.quantity * batch.unitPrice,
+      ),
+    );
     return Consumer<AppState>(
       builder: (context, appState, _) {
         var netNewQuantity = 0;
         for (final r in rows.values) {
           final original = r.existingSale;
-          netNewQuantity +=
-              original == null ? r.quantity : (r.quantity - original.quantity);
+          netNewQuantity += original == null
+              ? r.quantity
+              : (r.quantity - original.quantity);
         }
         final allocated = allocatedQuantity(batch.id, appState.sales);
         final remainingAfter = batch.countProduced - allocated - netNewQuantity;

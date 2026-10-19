@@ -21,8 +21,10 @@ Future<String?> showBrowsePhotosDialog(BuildContext context) {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('Choose an existing image',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    child: Text(
+                      'Choose an existing image',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -59,21 +61,26 @@ Future<String?> showBrowsePhotosDialog(BuildContext context) {
                     shrinkWrap: true,
                     gridDelegate:
                         const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 110,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                    ),
+                          maxCrossAxisExtent: 110,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
                     itemCount: files.length,
                     itemBuilder: (context, index) {
                       final file = files[index];
                       return InkWell(
                         borderRadius: BorderRadius.circular(8),
-                        onTap: () => Navigator.of(context)
-                            .pop(cacheBust(file.publicUrl)),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pop(cacheBust(file.publicUrl)),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: CachedNetworkImage(
-                            imageUrl: file.publicUrl,
+                            imageUrl: productThumbnailUrl(
+                              file.publicUrl,
+                              width: 240,
+                              height: 240,
+                            ),
                             fit: BoxFit.cover,
                             errorWidget: (context, url, error) =>
                                 const Icon(Icons.broken_image_outlined),

@@ -9,6 +9,7 @@ import '../../models/customer.dart';
 import '../../reports/customer_statement_pdf.dart' as statement;
 import '../../settings/business_settings_controller.dart';
 import '../../theme/theme_controller.dart';
+import '../../utils/money.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
@@ -69,10 +70,11 @@ class _UnpaidStatementReportScreenState
     final selectedCustomers = withBalance
         .where((c) => _selected!.contains(c.id))
         .toList();
-    final total = selectedCustomers.fold<double>(
-        0,
-        (sum, c) =>
-            sum + customerBalance(c.id, appState.sales, appState.salePayments));
+    final total = sumMoney(
+      selectedCustomers.map(
+        (c) => customerBalance(c.id, appState.sales, appState.salePayments),
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Statement Report')),

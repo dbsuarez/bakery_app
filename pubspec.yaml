@@ -54,6 +54,8 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   cached_network_image: ^3.4.1
+  flutter_secure_storage: ^10.3.4
+  archive: ^3.6.1
 
 dev_dependencies:
   flutter_test:

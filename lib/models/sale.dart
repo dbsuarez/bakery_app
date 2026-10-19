@@ -24,6 +24,7 @@ class Sale {
   final DateTime saleDate;
   final int quantity;
   final double amount;
+
   /// Purely informational: how much was knocked off full price to arrive
   /// at [amount]. [amount] is still the actual charged/owed figure
   /// everywhere else in the app.
@@ -33,6 +34,12 @@ class Sale {
   final String? paymentMethod;
   final SaleType saleType;
   final String? notes;
+
+  /// A reservation: the customer has committed to buying from this batch
+  /// before it's actually ready/in stock, as opposed to a normal sale
+  /// logged once it's available. Still counts toward allocated quantity -
+  /// this is a display/organizational flag, not a different business rule.
+  final bool isReservation;
   final DateTime updatedAt;
   final bool isDirty;
   final bool isDeleted;
@@ -52,6 +59,7 @@ class Sale {
     this.paymentMethod,
     this.saleType = SaleType.customerSale,
     this.notes,
+    this.isReservation = false,
     required this.updatedAt,
     this.isDirty = true,
     this.isDeleted = false,
@@ -97,6 +105,7 @@ class BatchTransactionEntry {
   final DateTime? datePaid;
   final String? paymentMethod;
   final String? notes;
+  final bool isReservation;
 
   const BatchTransactionEntry({
     required this.customerId,
@@ -107,5 +116,6 @@ class BatchTransactionEntry {
     this.datePaid,
     this.paymentMethod,
     this.notes,
+    this.isReservation = false,
   });
 }

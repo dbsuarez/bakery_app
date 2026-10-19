@@ -7,10 +7,12 @@ class LockScreen extends StatefulWidget {
   final AppLockService lockService;
   final VoidCallback onUnlocked;
   final bool biometricEnabled;
+
   /// Bumped by the parent only when it's safe to show the biometric prompt
   /// (app genuinely in the foreground) - never attempted from [initState],
   /// which can fire while still backgrounded (e.g. behind a share sheet).
   final int biometricTrigger;
+
   /// Called when biometric is cancelled/fails, or the user starts typing a
   /// PIN instead - lets the parent stop auto-popping biometric again for
   /// the rest of this locked stretch.
@@ -62,9 +64,7 @@ class _LockScreenState extends State<LockScreen> {
   Future<void> _tryBiometric() async {
     try {
       final auth = LocalAuthentication();
-      final ok = await auth.authenticate(
-        localizedReason: 'Unlock My Bakery',
-      );
+      final ok = await auth.authenticate(localizedReason: 'Unlock My Bakery');
       if (ok) {
         widget.onUnlocked();
       } else {
@@ -80,14 +80,31 @@ class _LockScreenState extends State<LockScreen> {
       _checking = true;
       _error = null;
     });
-    final ok = await widget.lockService.verifyPin(_pinController.text);
+    bool ok;
+    try {
+      ok = await widget.lockService.verifyPin(_pinController.text);
+    } on PinLockedException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _error =
+            'Too many attempts. Try again in '
+            '${error.retryAfter.inSeconds + 1} seconds.';
+      });
+      return;
+    }
     if (!mounted) return;
     if (ok) {
       widget.onUnlocked();
     } else {
+      final retryAfter = await widget.lockService.currentLockout();
+      if (!mounted) return;
       setState(() {
         _checking = false;
-        _error = 'Incorrect PIN';
+        _error = retryAfter > Duration.zero
+            ? 'Too many attempts. Try again in '
+                  '${retryAfter.inSeconds + 1} seconds.'
+            : 'Incorrect PIN';
         _pinController.clear();
       });
     }
@@ -107,7 +124,10 @@ class _LockScreenState extends State<LockScreen> {
                 children: [
                   Image.asset('assets/images/logo.png', height: 120),
                   const SizedBox(height: 16),
-                  Text('Enter PIN', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Enter PIN',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _pinController,

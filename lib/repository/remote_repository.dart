@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -5,9 +7,12 @@ import '../models/batch.dart' as m;
 import '../models/customer.dart' as m;
 import '../models/customer_credit.dart' as m;
 import '../models/customer_favorite.dart' as m;
+import '../models/expense.dart' as m;
+import '../models/favorite_dismissal.dart' as m;
 import '../models/loyalty_adjustment.dart' as m;
 import '../models/product.dart' as m;
 import '../models/sale.dart' as m;
+import '../utils/money.dart';
 import 'bakery_repository.dart';
 
 /// Supabase primary keys are UUIDs, but the shared [BakeryRepository]
@@ -39,8 +44,36 @@ class _IdMapper {
 
 String _dateOnly(DateTime dt) => dt.toIso8601String().split('T').first;
 
+/// Enforces the app's settled-accounting rule before a transaction or batch
+/// mutation is sent. PostgreSQL triggers/RPCs repeat this check authoritatively.
+void ensureBatchTransactionsMutable({
+  required bool locked,
+  required bool remitted,
+}) {
+  if (locked || remitted) {
+    throw StateError(
+      'Transactions in a remitted batch cannot be changed. Reopen the '
+      'remittance first.',
+    );
+  }
+}
+
+class _RemoteSnapshot {
+  final Map<String, List<Map<String, dynamic>>> tables;
+
+  const _RemoteSnapshot(this.tables);
+
+  List<Map<String, dynamic>> operator [](String table) =>
+      tables[table] ?? const [];
+}
+
 class RemoteRepository implements BakeryRepository {
+  static const _pollInterval = Duration(seconds: 30);
+
   final SupabaseClient client;
+  late final Stream<_RemoteSnapshot> _snapshots;
+  int _refreshVersion = 0;
+  final Set<Completer<void>> _refreshWaiters = {};
 
   /// Set whenever a background poll fails - surfaced in Settings so a
   /// silent connectivity problem (data just stops updating) is visible
@@ -59,74 +92,102 @@ class RemoteRepository implements BakeryRepository {
   final _loyaltyAdjustmentIds = _IdMapper();
   final _salePaymentIds = _IdMapper();
   final _customerCreditIds = _IdMapper();
+  final _expenseIds = _IdMapper();
 
-  RemoteRepository(this.client);
+  RemoteRepository(this.client) {
+    // All ten consumers subscribe during AppState construction. A broadcast
+    // stream lets them share one RPC request and one polling timer.
+    _snapshots = _watchSnapshots().asBroadcastStream();
+  }
+
+  @override
+  void refresh() {
+    _refreshVersion++;
+    final waiters = _refreshWaiters.toList();
+    _refreshWaiters.clear();
+    for (final waiter in waiters) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+  }
+
+  Future<void> _waitForRefresh(int observedVersion) async {
+    if (_refreshVersion != observedVersion) return;
+    final waiter = Completer<void>();
+    _refreshWaiters.add(waiter);
+    try {
+      await waiter.future.timeout(_pollInterval, onTimeout: () {});
+    } finally {
+      _refreshWaiters.remove(waiter);
+    }
+  }
 
   m.Product _productFromRow(Map<String, dynamic> row) => m.Product(
-        id: _productIds.toInt(row['id'] as String),
-        remoteId: row['id'] as String,
-        title: row['title'] as String,
-        imageUrl: row['image_url'] as String?,
-        category: m.ProductCategory.fromValue(
-            row['category'] as String? ?? 'bakery'),
-        isArchived: row['is_archived'] as bool? ?? false,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-        isDirty: false,
-        isDeleted: row['is_deleted'] as bool,
-      );
+    id: _productIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    title: row['title'] as String,
+    imageUrl: row['image_url'] as String?,
+    category: m.ProductCategory.fromValue(
+      row['category'] as String? ?? 'bakery',
+    ),
+    isArchived: row['is_archived'] as bool? ?? false,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
 
   m.Customer _customerFromRow(Map<String, dynamic> row) => m.Customer(
-        id: _customerIds.toInt(row['id'] as String),
-        remoteId: row['id'] as String,
-        name: row['name'] as String,
-        phone: row['phone'] as String?,
-        isArchived: row['is_archived'] as bool,
-        group: row['group_name'] as String?,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-        isDirty: false,
-        isDeleted: row['is_deleted'] as bool,
-      );
+    id: _customerIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    name: row['name'] as String,
+    phone: row['phone'] as String?,
+    isArchived: row['is_archived'] as bool,
+    group: row['group_name'] as String?,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
 
   m.Batch _batchFromRow(Map<String, dynamic> row) => m.Batch(
-        id: _batchIds.toInt(row['id'] as String),
-        remoteId: row['id'] as String,
-        productId: _productIds.toInt(row['product_id'] as String),
-        batchDate: DateTime.parse(row['batch_date'] as String),
-        countProduced: row['count_produced'] as int,
-        unitPrice: (row['unit_price'] as num).toDouble(),
-        unitCost: (row['unit_cost'] as num).toDouble(),
-        totalValue: (row['total_value'] as num).toDouble(),
-        remitted: row['remitted'] as bool,
-        dateRemitted: row['date_remitted'] == null
-            ? null
-            : DateTime.parse(row['date_remitted'] as String),
-        locked: row['locked'] as bool,
-        isPersonal: row['is_personal'] as bool? ?? false,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-        isDirty: false,
-        isDeleted: row['is_deleted'] as bool,
-      );
+    id: _batchIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    productId: _productIds.toInt(row['product_id'] as String),
+    batchDate: DateTime.parse(row['batch_date'] as String),
+    countProduced: row['count_produced'] as int,
+    unitPrice: (row['unit_price'] as num).toDouble(),
+    unitCost: (row['unit_cost'] as num).toDouble(),
+    totalValue: (row['total_value'] as num).toDouble(),
+    remitted: row['remitted'] as bool,
+    dateRemitted: row['date_remitted'] == null
+        ? null
+        : DateTime.parse(row['date_remitted'] as String),
+    locked: row['locked'] as bool,
+    isPersonal: row['is_personal'] as bool? ?? false,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
 
   m.Sale _saleFromRow(Map<String, dynamic> row) => m.Sale(
-        id: _saleIds.toInt(row['id'] as String),
-        remoteId: row['id'] as String,
-        batchId: _batchIds.toInt(row['batch_id'] as String),
-        customerId: _customerIds.toInt(row['customer_id'] as String),
-        saleDate: DateTime.parse(row['sale_date'] as String),
-        quantity: row['quantity'] as int,
-        amount: (row['amount'] as num).toDouble(),
-        discount: (row['discount'] as num?)?.toDouble() ?? 0,
-        paid: row['paid'] as bool,
-        datePaid: row['date_paid'] == null
-            ? null
-            : DateTime.parse(row['date_paid'] as String),
-        paymentMethod: row['payment_method'] as String?,
-        saleType: m.SaleType.fromValue(row['sale_type'] as String),
-        notes: row['notes'] as String?,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-        isDirty: false,
-        isDeleted: row['is_deleted'] as bool,
-      );
+    id: _saleIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    batchId: _batchIds.toInt(row['batch_id'] as String),
+    customerId: _customerIds.toInt(row['customer_id'] as String),
+    saleDate: DateTime.parse(row['sale_date'] as String),
+    quantity: row['quantity'] as int,
+    amount: (row['amount'] as num).toDouble(),
+    discount: (row['discount'] as num?)?.toDouble() ?? 0,
+    paid: row['paid'] as bool,
+    datePaid: row['date_paid'] == null
+        ? null
+        : DateTime.parse(row['date_paid'] as String),
+    paymentMethod: row['payment_method'] as String?,
+    saleType: m.SaleType.fromValue(row['sale_type'] as String),
+    notes: row['notes'] as String?,
+    isReservation: row['is_reservation'] as bool? ?? false,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
 
   m.LoyaltyAdjustment _loyaltyAdjustmentFromRow(Map<String, dynamic> row) =>
       m.LoyaltyAdjustment(
@@ -142,19 +203,18 @@ class RemoteRepository implements BakeryRepository {
         isDeleted: row['is_deleted'] as bool,
       );
 
-  m.SalePayment _salePaymentFromRow(Map<String, dynamic> row) =>
-      m.SalePayment(
-        id: _salePaymentIds.toInt(row['id'] as String),
-        remoteId: row['id'] as String,
-        saleId: _saleIds.toInt(row['sale_id'] as String),
-        amount: (row['amount'] as num).toDouble(),
-        paymentDate: DateTime.parse(row['payment_date'] as String),
-        paymentMethod: row['payment_method'] as String?,
-        notes: row['notes'] as String?,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-        isDirty: false,
-        isDeleted: row['is_deleted'] as bool,
-      );
+  m.SalePayment _salePaymentFromRow(Map<String, dynamic> row) => m.SalePayment(
+    id: _salePaymentIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    saleId: _saleIds.toInt(row['sale_id'] as String),
+    amount: (row['amount'] as num).toDouble(),
+    paymentDate: DateTime.parse(row['payment_date'] as String),
+    paymentMethod: row['payment_method'] as String?,
+    notes: row['notes'] as String?,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
 
   m.CustomerCredit _customerCreditFromRow(Map<String, dynamic> row) =>
       m.CustomerCredit(
@@ -178,93 +238,179 @@ class RemoteRepository implements BakeryRepository {
         productId: _productIds.toInt(row['product_id'] as String),
       );
 
-  // Realtime's `.stream()` depends on a long-lived WebSocket connection,
-  // which is far more sensitive to flaky mobile networks/DNS than a plain
-  // REST request (a dropped WS never recovers on its own and silently
-  // yields zero rows forever). Poll with plain `.select()` calls instead -
-  // slightly less "live" but it only ever needs the request type that's
-  // actually proven reliable.
-  Stream<List<Map<String, dynamic>>> _watchTable(
+  m.FavoriteDismissal _favoriteDismissalFromRow(Map<String, dynamic> row) =>
+      m.FavoriteDismissal(
+        customerId: _customerIds.toInt(row['customer_id'] as String),
+        batchId: _batchIds.toInt(row['batch_id'] as String),
+      );
+
+  m.Expense _expenseFromRow(Map<String, dynamic> row) => m.Expense(
+    id: _expenseIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    amount: (row['amount'] as num).toDouble(),
+    category: row['category'] as String? ?? 'Other',
+    expenseDate: DateTime.parse(row['expense_date'] as String),
+    notes: row['notes'] as String?,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDirty: false,
+    isDeleted: row['is_deleted'] as bool,
+  );
+
+  Future<void> _ensureBatchUnlocked(String batchUuid) async {
+    final batch = await client
+        .from('batches')
+        .select('locked, remitted')
+        .eq('id', batchUuid)
+        .single();
+    ensureBatchTransactionsMutable(
+      locked: batch['locked'] as bool? ?? false,
+      remitted: batch['remitted'] as bool? ?? false,
+    );
+  }
+
+  Future<void> _ensureSaleUnlocked(int saleId) async {
+    final sale = await client
+        .from('sales')
+        .select('batch_id')
+        .eq('id', _saleIds.toUuid(saleId))
+        .single();
+    await _ensureBatchUnlocked(sale['batch_id'] as String);
+  }
+
+  static const _snapshotTables = <String>[
+    'products',
+    'customers',
+    'batches',
+    'sales',
+    'loyalty_adjustments',
+    'sale_payments',
+    'customer_credits',
+    'customer_favorites',
+    'favorite_dismissals',
+    'expenses',
+  ];
+
+  List<Map<String, dynamic>> _snapshotRows(
+    Map<String, dynamic> snapshot,
     String table,
-    String orderColumn, {
-    required bool ascending,
-    bool filterDeleted = true,
-  }) async* {
+  ) {
+    final value = snapshot[table];
+    if (value is! List) {
+      throw FormatException('Snapshot field "$table" is not a list.');
+    }
+    return value.map((row) => Map<String, dynamic>.from(row as Map)).toList();
+  }
+
+  // Realtime's `.stream()` depends on a long-lived WebSocket connection.
+  // Keep the resilient REST fallback, but fetch one consistent snapshot via
+  // one RPC instead of issuing ten independent table requests.
+  Stream<_RemoteSnapshot> _watchSnapshots() async* {
     while (true) {
+      final observedVersion = _refreshVersion;
       try {
-        final query = client.from(table).select();
-        final rows = await (filterDeleted
-                ? query.eq('is_deleted', false)
-                : query)
-            .order(orderColumn, ascending: ascending)
+        final response = await client
+            .rpc('get_app_snapshot')
             .timeout(const Duration(seconds: 15));
+        final snapshot = Map<String, dynamic>.from(response as Map);
+        final tables = <String, List<Map<String, dynamic>>>{
+          for (final table in _snapshotTables)
+            table: _snapshotRows(snapshot, table),
+        };
         lastFetchError.value = null;
         final now = DateTime.now();
         final hh = now.hour.toString().padLeft(2, '0');
         final mm = now.minute.toString().padLeft(2, '0');
         final ss = now.second.toString().padLeft(2, '0');
         lastFetchInfo.value = {
-          ...lastFetchInfo.value,
-          table: '${rows.length} rows @ $hh:$mm:$ss',
+          for (final entry in tables.entries)
+            entry.key: '${entry.value.length} rows @ $hh:$mm:$ss',
         };
-        yield rows;
+        yield _RemoteSnapshot(tables);
       } catch (e) {
         // Keep the stream alive on a transient failure; the UI just keeps
         // showing the last successfully-fetched values.
-        lastFetchError.value = '$table: $e';
+        lastFetchError.value = 'snapshot: $e';
       }
-      await Future.delayed(const Duration(seconds: 10));
+      // Refresh promptly after a successful mutation or app resume. The
+      // timeout is the low-frequency fallback for changes made elsewhere.
+      await _waitForRefresh(observedVersion);
     }
   }
 
   @override
   Stream<List<m.Product>> watchProducts() {
-    return _watchTable('products', 'title', ascending: true)
-        .map((rows) => rows.map(_productFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['products'].map(_productFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.Customer>> watchCustomers() {
-    return _watchTable('customers', 'name', ascending: true)
-        .map((rows) => rows.map(_customerFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['customers'].map(_customerFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.Batch>> watchBatches() {
-    return _watchTable('batches', 'batch_date', ascending: false)
-        .map((rows) => rows.map(_batchFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['batches'].map(_batchFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.Sale>> watchSales() {
-    return _watchTable('sales', 'sale_date', ascending: false)
-        .map((rows) => rows.map(_saleFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['sales'].map(_saleFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.LoyaltyAdjustment>> watchLoyaltyAdjustments() {
-    return _watchTable('loyalty_adjustments', 'adjustment_date',
-            ascending: false)
-        .map((rows) => rows.map(_loyaltyAdjustmentFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['loyalty_adjustments']
+          .map(_loyaltyAdjustmentFromRow)
+          .toList(),
+    );
   }
 
   @override
   Stream<List<m.SalePayment>> watchSalePayments() {
-    return _watchTable('sale_payments', 'payment_date', ascending: false)
-        .map((rows) => rows.map(_salePaymentFromRow).toList());
+    return _snapshots.map(
+      (snapshot) => snapshot['sale_payments'].map(_salePaymentFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.CustomerCredit>> watchCustomerCredits() {
-    return _watchTable('customer_credits', 'credit_date', ascending: false)
-        .map((rows) => rows.map(_customerCreditFromRow).toList());
+    return _snapshots.map(
+      (snapshot) =>
+          snapshot['customer_credits'].map(_customerCreditFromRow).toList(),
+    );
   }
 
   @override
   Stream<List<m.CustomerFavorite>> watchCustomerFavorites() {
-    return _watchTable('customer_favorites', 'created_at',
-            ascending: false, filterDeleted: false)
-        .map((rows) => rows.map(_customerFavoriteFromRow).toList());
+    return _snapshots.map(
+      (snapshot) =>
+          snapshot['customer_favorites'].map(_customerFavoriteFromRow).toList(),
+    );
+  }
+
+  @override
+  Stream<List<m.FavoriteDismissal>> watchFavoriteDismissals() {
+    return _snapshots.map(
+      (snapshot) => snapshot['favorite_dismissals']
+          .map(_favoriteDismissalFromRow)
+          .toList(),
+    );
+  }
+
+  @override
+  Stream<List<m.Expense>> watchExpenses() {
+    return _snapshots.map(
+      (snapshot) => snapshot['expenses'].map(_expenseFromRow).toList(),
+    );
   }
 
   @override
@@ -274,16 +420,21 @@ class RemoteRepository implements BakeryRepository {
       'image_url': product.imageUrl,
       'category': product.category.value,
     });
+    refresh();
   }
 
   @override
   Future<void> updateProduct(m.Product product) async {
-    await client.from('products').update({
-      'title': product.title,
-      'image_url': product.imageUrl,
-      'category': product.category.value,
-      'is_archived': product.isArchived,
-    }).eq('id', _productIds.toUuid(product.id));
+    await client
+        .from('products')
+        .update({
+          'title': product.title,
+          'image_url': product.imageUrl,
+          'category': product.category.value,
+          'is_archived': product.isArchived,
+        })
+        .eq('id', _productIds.toUuid(product.id));
+    refresh();
   }
 
   @override
@@ -293,16 +444,21 @@ class RemoteRepository implements BakeryRepository {
       'phone': customer.phone,
       'group_name': customer.group,
     });
+    refresh();
   }
 
   @override
   Future<void> updateCustomer(m.Customer customer) async {
-    await client.from('customers').update({
-      'name': customer.name,
-      'phone': customer.phone,
-      'is_archived': customer.isArchived,
-      'group_name': customer.group,
-    }).eq('id', _customerIds.toUuid(customer.id));
+    await client
+        .from('customers')
+        .update({
+          'name': customer.name,
+          'phone': customer.phone,
+          'is_archived': customer.isArchived,
+          'group_name': customer.group,
+        })
+        .eq('id', _customerIds.toUuid(customer.id));
+    refresh();
   }
 
   @override
@@ -316,25 +472,26 @@ class RemoteRepository implements BakeryRepository {
       'total_value': batch.countProduced * batch.unitPrice,
       'is_personal': batch.isPersonal,
     });
+    refresh();
   }
 
   @override
   Future<void> updateBatch(m.Batch batch) async {
     final uuid = _batchIds.toUuid(batch.id);
-    final existing =
-        await client.from('batches').select('locked').eq('id', uuid).single();
-    if (existing['locked'] as bool) {
-      throw StateError('Cannot edit a locked (remitted) batch.');
-    }
-    await client.from('batches').update({
-      'product_id': _productIds.toUuid(batch.productId),
-      'batch_date': _dateOnly(batch.batchDate),
-      'count_produced': batch.countProduced,
-      'unit_price': batch.unitPrice,
-      'unit_cost': batch.unitCost,
-      'total_value': batch.countProduced * batch.unitPrice,
-      'is_personal': batch.isPersonal,
-    }).eq('id', uuid);
+    await _ensureBatchUnlocked(uuid);
+    await client
+        .from('batches')
+        .update({
+          'product_id': _productIds.toUuid(batch.productId),
+          'batch_date': _dateOnly(batch.batchDate),
+          'count_produced': batch.countProduced,
+          'unit_price': batch.unitPrice,
+          'unit_cost': batch.unitCost,
+          'total_value': batch.countProduced * batch.unitPrice,
+          'is_personal': batch.isPersonal,
+        })
+        .eq('id', uuid);
+    refresh();
   }
 
   @override
@@ -342,92 +499,91 @@ class RemoteRepository implements BakeryRepository {
     if (sale.quantity <= 0) {
       throw ArgumentError('Quantity must be a positive integer.');
     }
-    // A locked (remitted) batch's revenue is already settled, so a real
-    // customer sale can't be backdated onto it. Zero-revenue internal
-    // consumption/freebie entries are exempt - they only adjust inventory
-    // accounting, not money already remitted.
-    if (sale.saleType == m.SaleType.customerSale) {
-      final batchUuid = _batchIds.toUuid(sale.batchId);
-      final existing = await client
-          .from('batches')
-          .select('locked')
-          .eq('id', batchUuid)
-          .single();
-      if (existing['locked'] as bool) {
-        throw StateError(
-          'Cannot add a customer sale to a locked (remitted) batch.',
-        );
-      }
-    }
-    await client.from('sales').insert({
-      'batch_id': _batchIds.toUuid(sale.batchId),
-      'customer_id': _customerIds.toUuid(sale.customerId),
-      'sale_date': _dateOnly(sale.saleDate),
-      'quantity': sale.quantity,
-      'amount': sale.amount,
-      'discount': sale.discount,
-      'paid': sale.paid,
-      'date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
-      'payment_method': sale.paymentMethod,
-      'sale_type': sale.saleType.value,
-      'notes': sale.notes,
-    });
+    await client.rpc(
+      'create_sale_atomic',
+      params: {
+        'p_batch_id': _batchIds.toUuid(sale.batchId),
+        'p_customer_id': _customerIds.toUuid(sale.customerId),
+        'p_sale_date': _dateOnly(sale.saleDate),
+        'p_quantity': sale.quantity,
+        'p_amount': sale.amount,
+        'p_discount': sale.discount,
+        'p_paid': sale.paid,
+        'p_date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
+        'p_payment_method': sale.paymentMethod,
+        'p_sale_type': sale.saleType.value,
+        'p_notes': sale.notes,
+        'p_is_reservation': sale.isReservation,
+      },
+    );
+    refresh();
   }
 
   @override
-  Future<void> updateSale(m.Sale sale) async {
+  Future<void> updateSale(m.Sale sale, {bool allowOverallocate = false}) async {
     if (sale.quantity <= 0) {
       throw ArgumentError('Quantity must be a positive integer.');
     }
-    await client.from('sales').update({
-      'batch_id': _batchIds.toUuid(sale.batchId),
-      'customer_id': _customerIds.toUuid(sale.customerId),
-      'sale_date': _dateOnly(sale.saleDate),
-      'quantity': sale.quantity,
-      'amount': sale.amount,
-      'discount': sale.discount,
-      'paid': sale.paid,
-      'date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
-      'payment_method': sale.paymentMethod,
-      'sale_type': sale.saleType.value,
-      'notes': sale.notes,
-    }).eq('id', _saleIds.toUuid(sale.id));
+    await client.rpc(
+      'update_sale_atomic',
+      params: {
+        'p_sale_id': _saleIds.toUuid(sale.id),
+        'p_batch_id': _batchIds.toUuid(sale.batchId),
+        'p_customer_id': _customerIds.toUuid(sale.customerId),
+        'p_sale_date': _dateOnly(sale.saleDate),
+        'p_quantity': sale.quantity,
+        'p_amount': sale.amount,
+        'p_discount': sale.discount,
+        'p_paid': sale.paid,
+        'p_date_paid': sale.datePaid == null ? null : _dateOnly(sale.datePaid!),
+        'p_payment_method': sale.paymentMethod,
+        'p_sale_type': sale.saleType.value,
+        'p_notes': sale.notes,
+        'p_is_reservation': sale.isReservation,
+        'p_allow_overallocate': allowOverallocate,
+      },
+    );
+    refresh();
   }
 
   @override
   Future<void> addBatchTransactions(
     int batchId,
-    List<m.BatchTransactionEntry> entries,
-  ) async {
+    List<m.BatchTransactionEntry> entries, {
+    bool allowOverallocate = false,
+  }) async {
     if (entries.isEmpty) return;
     for (final entry in entries) {
       if (entry.quantity <= 0) {
         throw ArgumentError('Quantity must be a positive integer.');
       }
     }
-    final uuid = _batchIds.toUuid(batchId);
-    final existing =
-        await client.from('batches').select('locked').eq('id', uuid).single();
-    if (existing['locked'] as bool) {
-      throw StateError('Cannot add transactions to a locked batch.');
-    }
     final now = _dateOnly(DateTime.now());
-    await client.from('sales').insert([
-      for (final entry in entries)
-        {
-          'batch_id': uuid,
-          'customer_id': _customerIds.toUuid(entry.customerId),
-          'sale_date': now,
-          'quantity': entry.quantity,
-          'amount': entry.amount,
-          'discount': entry.discount,
-          'paid': entry.paid,
-          'date_paid':
-              entry.datePaid == null ? null : _dateOnly(entry.datePaid!),
-          'payment_method': entry.paymentMethod,
-          'notes': entry.notes,
-        },
-    ]);
+    await client.rpc(
+      'create_batch_sales_atomic',
+      params: {
+        'p_batch_id': _batchIds.toUuid(batchId),
+        'p_entries': [
+          for (final entry in entries)
+            {
+              'customer_id': _customerIds.toUuid(entry.customerId),
+              'sale_date': now,
+              'quantity': entry.quantity,
+              'amount': entry.amount,
+              'discount': entry.discount,
+              'paid': entry.paid,
+              'date_paid': entry.datePaid == null
+                  ? null
+                  : _dateOnly(entry.datePaid!),
+              'payment_method': entry.paymentMethod,
+              'notes': entry.notes,
+              'is_reservation': entry.isReservation,
+            },
+        ],
+        'p_allow_overallocate': allowOverallocate,
+      },
+    );
+    refresh();
   }
 
   @override
@@ -435,6 +591,7 @@ class RemoteRepository implements BakeryRepository {
     if (payment.amount <= 0) {
       throw ArgumentError('Payment amount must be positive.');
     }
+    await _ensureSaleUnlocked(payment.saleId);
     final saleUuid = _saleIds.toUuid(payment.saleId);
     await client.from('sale_payments').insert({
       'sale_id': saleUuid,
@@ -455,17 +612,20 @@ class RemoteRepository implements BakeryRepository {
         .select('amount')
         .eq('sale_id', saleUuid)
         .eq('is_deleted', false);
-    final totalPaid = existingPayments.fold<double>(
-        0, (sum, row) => sum + (row['amount'] as num).toDouble());
-    // Small epsilon so floating-point rounding never leaves a fully-paid
-    // sale stuck open by a fraction of a centavo.
-    if (totalPaid >= saleAmount - 0.01) {
-      await client.from('sales').update({
-        'paid': true,
-        'date_paid': _dateOnly(payment.paymentDate),
-        'payment_method': payment.paymentMethod,
-      }).eq('id', saleUuid);
+    final totalPaid = sumMoney(
+      existingPayments.map((row) => row['amount'] as num),
+    );
+    if (toCentavos(totalPaid) >= toCentavos(saleAmount)) {
+      await client
+          .from('sales')
+          .update({
+            'paid': true,
+            'date_paid': _dateOnly(payment.paymentDate),
+            'payment_method': payment.paymentMethod,
+          })
+          .eq('id', saleUuid);
     }
+    refresh();
   }
 
   @override
@@ -474,58 +634,76 @@ class RemoteRepository implements BakeryRepository {
     DateTime paymentDate, {
     String? paymentMethod,
   }) async {
-    await client.from('sales').update({
-      'paid': true,
-      'date_paid': _dateOnly(paymentDate),
-      'payment_method': paymentMethod,
-    }).eq('id', _saleIds.toUuid(saleId));
+    await _ensureSaleUnlocked(saleId);
+    await client
+        .from('sales')
+        .update({
+          'paid': true,
+          'date_paid': _dateOnly(paymentDate),
+          'payment_method': paymentMethod,
+        })
+        .eq('id', _saleIds.toUuid(saleId));
+    refresh();
   }
 
   @override
   Future<void> markSaleUnpaid(int saleId) async {
-    await client.from('sales').update({
-      'paid': false,
-      'date_paid': null,
-    }).eq('id', _saleIds.toUuid(saleId));
+    await _ensureSaleUnlocked(saleId);
+    await client
+        .from('sales')
+        .update({'paid': false, 'date_paid': null})
+        .eq('id', _saleIds.toUuid(saleId));
+    refresh();
   }
 
   @override
   Future<void> markBatchRemitted(int batchId, DateTime dateRemitted) async {
-    await client.from('batches').update({
-      'remitted': true,
-      'date_remitted': _dateOnly(dateRemitted),
-      'locked': true,
-    }).eq('id', _batchIds.toUuid(batchId));
+    await client
+        .from('batches')
+        .update({
+          'remitted': true,
+          'date_remitted': _dateOnly(dateRemitted),
+          'locked': true,
+        })
+        .eq('id', _batchIds.toUuid(batchId));
+    refresh();
   }
 
   @override
   Future<void> unlockBatch(int batchId) async {
     await client
         .from('batches')
-        .update({'locked': false}).eq('id', _batchIds.toUuid(batchId));
+        .update({'locked': false})
+        .eq('id', _batchIds.toUuid(batchId));
+    refresh();
   }
 
   @override
   Future<void> lockBatch(int batchId) async {
     await client
         .from('batches')
-        .update({'locked': true}).eq('id', _batchIds.toUuid(batchId));
+        .update({'locked': true})
+        .eq('id', _batchIds.toUuid(batchId));
+    refresh();
   }
 
   @override
   Future<void> revertBatchRemittance(int batchId) async {
-    await client.from('batches').update({
-      'remitted': false,
-      'date_remitted': null,
-      'locked': false,
-    }).eq('id', _batchIds.toUuid(batchId));
+    await client
+        .from('batches')
+        .update({'remitted': false, 'date_remitted': null, 'locked': false})
+        .eq('id', _batchIds.toUuid(batchId));
+    refresh();
   }
 
   @override
   Future<void> deleteSale(int saleId) async {
+    await _ensureSaleUnlocked(saleId);
     await client
         .from('sales')
-        .update({'is_deleted': true}).eq('id', _saleIds.toUuid(saleId));
+        .update({'is_deleted': true})
+        .eq('id', _saleIds.toUuid(saleId));
+    refresh();
   }
 
   @override
@@ -537,6 +715,7 @@ class RemoteRepository implements BakeryRepository {
       'reason': adjustment.reason,
       'adjustment_date': _dateOnly(adjustment.adjustmentDate),
     });
+    refresh();
   }
 
   @override
@@ -548,6 +727,7 @@ class RemoteRepository implements BakeryRepository {
       'sale_id': credit.saleId == null ? null : _saleIds.toUuid(credit.saleId!),
       'credit_date': _dateOnly(credit.creditDate),
     });
+    refresh();
   }
 
   @override
@@ -557,6 +737,7 @@ class RemoteRepository implements BakeryRepository {
     double newUnitPrice,
   ) async {
     final batchUuid = _batchIds.toUuid(batchId);
+    await _ensureBatchUnlocked(batchUuid);
     final rows = await client
         .from('sales')
         .select()
@@ -578,7 +759,8 @@ class RemoteRepository implements BakeryRepository {
           await client.from('customer_credits').insert({
             'customer_id': row['customer_id'],
             'amount': diff,
-            'reason': 'Batch unit price corrected from '
+            'reason':
+                'Batch unit price corrected from '
                 '₱${oldUnitPrice.toStringAsFixed(2)} to '
                 '₱${newUnitPrice.toStringAsFixed(2)}',
             'sale_id': saleUuid,
@@ -587,8 +769,10 @@ class RemoteRepository implements BakeryRepository {
       }
       await client
           .from('sales')
-          .update({'amount': newAmount}).eq('id', saleUuid);
+          .update({'amount': newAmount})
+          .eq('id', saleUuid);
     }
+    refresh();
   }
 
   @override
@@ -597,16 +781,19 @@ class RemoteRepository implements BakeryRepository {
     final intoUuid = _customerIds.toUuid(intoCustomerId);
     await client
         .from('sales')
-        .update({'customer_id': intoUuid}).eq('customer_id', fromUuid);
+        .update({'customer_id': intoUuid})
+        .eq('customer_id', fromUuid);
     await client
         .from('loyalty_adjustments')
-        .update({'customer_id': intoUuid}).eq('customer_id', fromUuid);
+        .update({'customer_id': intoUuid})
+        .eq('customer_id', fromUuid);
     // Best-effort: an older database that predates this table shouldn't
     // block the rest of the merge from completing.
     try {
       await client
           .from('customer_credits')
-          .update({'customer_id': intoUuid}).eq('customer_id', fromUuid);
+          .update({'customer_id': intoUuid})
+          .eq('customer_id', fromUuid);
     } catch (_) {
       // Ignored - see comment above.
     }
@@ -626,8 +813,9 @@ class RemoteRepository implements BakeryRepository {
           .from('customer_favorites')
           .select('product_id')
           .eq('customer_id', intoUuid);
-      final intoProductIds =
-          intoFavorites.map((r) => r['product_id'] as String).toSet();
+      final intoProductIds = intoFavorites
+          .map((r) => r['product_id'] as String)
+          .toSet();
       final newFavorites = fromFavorites
           .map((r) => r['product_id'] as String)
           .where((id) => !intoProductIds.contains(id))
@@ -646,7 +834,9 @@ class RemoteRepository implements BakeryRepository {
 
     await client
         .from('customers')
-        .update({'is_deleted': true}).eq('id', fromUuid);
+        .update({'is_deleted': true})
+        .eq('id', fromUuid);
+    refresh();
   }
 
   @override
@@ -655,6 +845,7 @@ class RemoteRepository implements BakeryRepository {
       'customer_id': _customerIds.toUuid(customerId),
       'product_id': _productIds.toUuid(productId),
     });
+    refresh();
   }
 
   @override
@@ -664,5 +855,55 @@ class RemoteRepository implements BakeryRepository {
         .delete()
         .eq('customer_id', _customerIds.toUuid(customerId))
         .eq('product_id', _productIds.toUuid(productId));
+    refresh();
+  }
+
+  @override
+  Future<void> dismissFavorite(int customerId, int batchId) async {
+    await client.from('favorite_dismissals').upsert({
+      'customer_id': _customerIds.toUuid(customerId),
+      'batch_id': _batchIds.toUuid(batchId),
+    });
+    refresh();
+  }
+
+  @override
+  Future<void> addExpense(m.Expense expense) async {
+    if (expense.amount <= 0) {
+      throw ArgumentError('Expense amount must be positive.');
+    }
+    await client.from('expenses').insert({
+      'amount': expense.amount,
+      'category': expense.category,
+      'expense_date': _dateOnly(expense.expenseDate),
+      'notes': expense.notes,
+    });
+    refresh();
+  }
+
+  @override
+  Future<void> updateExpense(m.Expense expense) async {
+    if (expense.amount <= 0) {
+      throw ArgumentError('Expense amount must be positive.');
+    }
+    await client
+        .from('expenses')
+        .update({
+          'amount': expense.amount,
+          'category': expense.category,
+          'expense_date': _dateOnly(expense.expenseDate),
+          'notes': expense.notes,
+        })
+        .eq('id', _expenseIds.toUuid(expense.id));
+    refresh();
+  }
+
+  @override
+  Future<void> deleteExpense(int expenseId) async {
+    await client
+        .from('expenses')
+        .update({'is_deleted': true})
+        .eq('id', _expenseIds.toUuid(expenseId));
+    refresh();
   }
 }

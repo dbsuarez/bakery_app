@@ -22,7 +22,9 @@ Future<String> uploadProductPhoto({
   final path = '$uid/$stableId.$ext';
   final bytes = await file.readAsBytes();
 
-  await client.storage.from(_bucket).uploadBinary(
+  await client.storage
+      .from(_bucket)
+      .uploadBinary(
         path,
         Uint8List.fromList(bytes),
         fileOptions: const FileOptions(upsert: true),
@@ -43,7 +45,9 @@ Future<String> uploadStandaloneProductPhoto(XFile file) async {
   final path = '$uid/${_uuid.v4()}.$ext';
   final bytes = await file.readAsBytes();
 
-  await client.storage.from(_bucket).uploadBinary(
+  await client.storage
+      .from(_bucket)
+      .uploadBinary(
         path,
         Uint8List.fromList(bytes),
         fileOptions: const FileOptions(upsert: true),
@@ -60,6 +64,34 @@ String cacheBust(String publicUrl) =>
 /// Strips the `?t=...` cache-bust suffix so two URLs for the same underlying
 /// storage object compare equal regardless of when each was generated.
 String stripCacheBust(String url) => url.split('?').first;
+
+/// Requests a small rendered copy for list/grid use while leaving the stored
+/// original URL untouched for persistence and fullscreen viewing.
+String productThumbnailUrl(
+  String publicUrl, {
+  int width = 400,
+  int? height,
+  int quality = 70,
+}) {
+  final uri = Uri.tryParse(publicUrl);
+  const objectPrefix = '/storage/v1/object/public/';
+  if (uri == null || !uri.path.contains(objectPrefix)) return publicUrl;
+  return uri
+      .replace(
+        path: uri.path.replaceFirst(
+          objectPrefix,
+          '/storage/v1/render/image/public/',
+        ),
+        queryParameters: {
+          ...uri.queryParameters,
+          'width': '$width',
+          if (height != null) 'height': '$height',
+          'quality': '$quality',
+          'resize': 'cover',
+        },
+      )
+      .toString();
+}
 
 class ProductPhotoFile {
   final String path;
@@ -79,18 +111,14 @@ Future<List<ProductPhotoFile>> listProductPhotos() async {
   final client = Supabase.instance.client;
   final uid = client.auth.currentUser!.id;
   final objects = await client.storage.from(_bucket).list(path: uid);
-  return objects
-      .where((o) => o.name != '.emptyFolderPlaceholder')
-      .map((o) {
-        final path = '$uid/${o.name}';
-        return ProductPhotoFile(
-          path: path,
-          publicUrl: client.storage.from(_bucket).getPublicUrl(path),
-          updatedAt:
-              o.updatedAt == null ? null : DateTime.tryParse(o.updatedAt!),
-        );
-      })
-      .toList();
+  return objects.where((o) => o.name != '.emptyFolderPlaceholder').map((o) {
+    final path = '$uid/${o.name}';
+    return ProductPhotoFile(
+      path: path,
+      publicUrl: client.storage.from(_bucket).getPublicUrl(path),
+      updatedAt: o.updatedAt == null ? null : DateTime.tryParse(o.updatedAt!),
+    );
+  }).toList();
 }
 
 /// Permanently deletes the given storage paths (as returned by

@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'models/batch.dart';
 import 'models/customer.dart';
 import 'models/customer_credit.dart';
 import 'models/customer_favorite.dart';
+import 'models/expense.dart';
+import 'models/favorite_dismissal.dart';
 import 'models/loyalty_adjustment.dart';
 import 'models/product.dart';
 import 'models/sale.dart';
@@ -13,7 +15,7 @@ import 'repository/bakery_repository.dart';
 
 /// Combines the repository's watch streams into synchronously-readable
 /// lists for the UI, via a single ChangeNotifier.
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   final BakeryRepository repository;
 
   List<Product> products = [];
@@ -24,6 +26,8 @@ class AppState extends ChangeNotifier {
   List<CustomerFavorite> customerFavorites = [];
   List<SalePayment> salePayments = [];
   List<CustomerCredit> customerCredits = [];
+  List<FavoriteDismissal> favoriteDismissals = [];
+  List<Expense> expenses = [];
 
   late final StreamSubscription _productsSub;
   late final StreamSubscription _customersSub;
@@ -33,8 +37,11 @@ class AppState extends ChangeNotifier {
   late final StreamSubscription _customerFavoritesSub;
   late final StreamSubscription _salePaymentsSub;
   late final StreamSubscription _customerCreditsSub;
+  late final StreamSubscription _favoriteDismissalsSub;
+  late final StreamSubscription _expensesSub;
 
   AppState(this.repository) {
+    WidgetsBinding.instance.addObserver(this);
     _productsSub = repository.watchProducts().listen((v) {
       products = v;
       notifyListeners();
@@ -67,7 +74,24 @@ class AppState extends ChangeNotifier {
       customerCredits = v;
       notifyListeners();
     });
+    _favoriteDismissalsSub = repository.watchFavoriteDismissals().listen((v) {
+      favoriteDismissals = v;
+      notifyListeners();
+    });
+    _expensesSub = repository.watchExpenses().listen((v) {
+      expenses = v;
+      notifyListeners();
+    });
   }
+
+  /// Refresh when returning to the foreground so decisions are not based on
+  /// data that may have changed while the app was inactive.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) repository.refresh();
+  }
+
+  void refresh() => repository.refresh();
 
   /// Customers (excluding archived/pseudo) who have favorited [productId].
   List<Customer> customersFavoriting(int productId) {
@@ -76,8 +100,12 @@ class AppState extends ChangeNotifier {
         .map((f) => f.customerId)
         .toSet();
     return customers
-        .where((c) =>
-            customerIds.contains(c.id) && !c.isArchived && !c.isPseudoCustomer)
+        .where(
+          (c) =>
+              customerIds.contains(c.id) &&
+              !c.isArchived &&
+              !c.isPseudoCustomer,
+        )
         .toList();
   }
 
@@ -104,6 +132,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _productsSub.cancel();
     _customersSub.cancel();
     _batchesSub.cancel();
@@ -112,6 +141,8 @@ class AppState extends ChangeNotifier {
     _customerFavoritesSub.cancel();
     _salePaymentsSub.cancel();
     _customerCreditsSub.cancel();
+    _favoriteDismissalsSub.cancel();
+    _expensesSub.cancel();
     super.dispose();
   }
 }

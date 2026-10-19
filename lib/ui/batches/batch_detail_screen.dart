@@ -7,6 +7,7 @@ import '../../analytics/batch_calculations.dart';
 import '../../app_state.dart';
 import '../../celebration/celebration_controller.dart';
 import '../../models/sale.dart';
+import '../../products/product_photo_service.dart';
 import '../../repository/bakery_repository.dart';
 import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
@@ -41,15 +42,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       );
     }
     final product = appState.productById(batch.productId);
-    final sales = appState.sales
-        .where((s) => s.batchId == batchId && !s.isDeleted)
-        .toList()
-      ..sort((a, b) {
-        final aUnpaid = !a.paid && a.saleType.value == 'customer_sale';
-        final bUnpaid = !b.paid && b.saleType.value == 'customer_sale';
-        if (aUnpaid != bUnpaid) return aUnpaid ? -1 : 1;
-        return b.saleDate.compareTo(a.saleDate);
-      });
+    final sales =
+        appState.sales
+            .where((s) => s.batchId == batchId && !s.isDeleted)
+            .toList()
+          ..sort((a, b) {
+            final aUnpaid = !a.paid && a.saleType.value == 'customer_sale';
+            final bUnpaid = !b.paid && b.saleType.value == 'customer_sale';
+            if (aUnpaid != bUnpaid) return aUnpaid ? -1 : 1;
+            return b.saleDate.compareTo(a.saleDate);
+          });
     final allocated = allocatedQuantity(batchId, appState.sales);
     final remaining = remainingQuantity(batch, appState.sales);
 
@@ -98,7 +100,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: CachedNetworkImage(
-                            imageUrl: product!.imageUrl!,
+                            imageUrl: productThumbnailUrl(
+                              product!.imageUrl!,
+                              width: 640,
+                              height: 280,
+                            ),
                             height: 140,
                             width: double.infinity,
                             fit: BoxFit.cover,
@@ -106,8 +112,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                               height: 140,
                               color: Colors.red.shade50,
                               alignment: Alignment.center,
-                              child: Icon(Icons.broken_image_outlined,
-                                  size: 32, color: Colors.red.shade400),
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 32,
+                                color: Colors.red.shade400,
+                              ),
                             ),
                           ),
                         ),
@@ -137,10 +146,18 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  _LabelValueRow('Unit price', _currency.format(batch.unitPrice)),
-                  Text('Produced: ${batch.countProduced} · '
-                      'Allocated: $allocated · Remaining: $remaining'),
-                  _LabelValueRow('Total value', _currency.format(batch.totalValue)),
+                  _LabelValueRow(
+                    'Unit price',
+                    _currency.format(batch.unitPrice),
+                  ),
+                  Text(
+                    'Produced: ${batch.countProduced} · '
+                    'Allocated: $allocated · Remaining: $remaining',
+                  ),
+                  _LabelValueRow(
+                    'Total value',
+                    _currency.format(batch.totalValue),
+                  ),
                   if (batch.unitCost > 0) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -151,9 +168,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                         IconButton(
                           icon: Icon(
-                            _showCost
-                                ? Icons.visibility
-                                : Icons.visibility_off,
+                            _showCost ? Icons.visibility : Icons.visibility_off,
                             size: 18,
                           ),
                           visualDensity: VisualDensity.compact,
@@ -164,7 +179,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ),
                     if (_showCost) ...[
                       _LabelValueRow(
-                          'Unit cost', _currency.format(batch.unitCost)),
+                        'Unit cost',
+                        _currency.format(batch.unitCost),
+                      ),
                       _LabelValueRow(
                         'Estimated profit',
                         _currency.format(batch.estimatedProfit),
@@ -226,8 +243,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
           for (final sale in sales)
             ListTile(
-              title: Text(appState.customerById(sale.customerId)?.name ??
-                  'Unknown customer'),
+              leading: sale.isReservation
+                  ? Icon(
+                      Icons.bookmark,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              title: Text(
+                appState.customerById(sale.customerId)?.name ??
+                    'Unknown customer',
+              ),
               subtitle: Text(
                 'Qty ${sale.quantity} · ${_currency.format(sale.amount)} · '
                 '${appDateFormat.format(sale.saleDate)}',
@@ -238,21 +263,22 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       backgroundColor: Colors.amber.withValues(alpha: 0.2),
                     )
                   : sale.saleType != SaleType.customerSale
-                      ? Chip(
-                          label: Text(
-                            sale.saleType == SaleType.internalConsumption
-                                ? 'Internal'
-                                : 'Unsold',
-                          ),
-                          backgroundColor:
-                              Colors.deepPurple.withValues(alpha: 0.15),
-                        )
-                      : Chip(
-                          label: Text(sale.paid ? 'Paid' : 'Unpaid'),
-                          backgroundColor: sale.paid
-                              ? Colors.green.withValues(alpha: 0.15)
-                              : Colors.orange.withValues(alpha: 0.15),
-                        ),
+                  ? Chip(
+                      label: Text(
+                        sale.saleType == SaleType.internalConsumption
+                            ? 'Internal'
+                            : 'Unsold',
+                      ),
+                      backgroundColor: Colors.deepPurple.withValues(
+                        alpha: 0.15,
+                      ),
+                    )
+                  : Chip(
+                      label: Text(sale.paid ? 'Paid' : 'Unpaid'),
+                      backgroundColor: sale.paid
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : Colors.orange.withValues(alpha: 0.15),
+                    ),
               onTap: () => _editSale(context, sale),
             ),
         ],
@@ -319,7 +345,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
     if (confirmed != true || !context.mounted) return;
     await runGuarded(
-        context, () => context.read<BakeryRepository>().unlockBatch(batchId));
+      context,
+      () => context.read<BakeryRepository>().unlockBatch(batchId),
+    );
   }
 
   Future<void> _lock(BuildContext context) async {
@@ -345,7 +373,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
     if (confirmed != true || !context.mounted) return;
     await runGuarded(
-        context, () => context.read<BakeryRepository>().lockBatch(batchId));
+      context,
+      () => context.read<BakeryRepository>().lockBatch(batchId),
+    );
   }
 
   Future<void> _revertRemittance(BuildContext context) async {
@@ -369,21 +399,30 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    await runGuarded(context,
-        () => context.read<BakeryRepository>().revertBatchRemittance(batchId));
+    await runGuarded(
+      context,
+      () => context.read<BakeryRepository>().revertBatchRemittance(batchId),
+    );
   }
 
   Future<void> _editSale(BuildContext context, Sale sale) async {
-    final quantityController =
-        TextEditingController(text: sale.quantity.toString());
-    final amountController =
-        TextEditingController(text: sale.amount.toStringAsFixed(2));
-    final discountController =
-        TextEditingController(text: sale.discount.toStringAsFixed(2));
+    final quantityController = TextEditingController(
+      text: sale.quantity.toString(),
+    );
+    final amountController = TextEditingController(
+      text: sale.amount.toStringAsFixed(2),
+    );
+    final discountController = TextEditingController(
+      text: sale.discount.toStringAsFixed(2),
+    );
     var saleType = sale.saleType;
     var paid = sale.paid;
-    final paymentMethods = context.read<BusinessSettingsController>().paymentMethods;
-    var paymentMethod = sale.paymentMethod ??
+    var isReservation = sale.isReservation;
+    final paymentMethods = context
+        .read<BusinessSettingsController>()
+        .paymentMethods;
+    var paymentMethod =
+        sale.paymentMethod ??
         (paymentMethods.isEmpty ? null : paymentMethods.first);
 
     final action = await showDialog<String>(
@@ -421,16 +460,26 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               TextField(
                 controller: amountController,
                 decoration: const InputDecoration(labelText: 'Amount'),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
               ),
               if (saleType == SaleType.customerSale)
                 TextField(
                   controller: discountController,
-                  decoration:
-                      const InputDecoration(labelText: 'Discount (optional)'),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Discount (optional)',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+              if (saleType == SaleType.customerSale)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Reservation'),
+                  value: isReservation,
+                  onChanged: (v) => setDialogState(() => isReservation = v),
                 ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -446,7 +495,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               if (paid && paymentMethods.isNotEmpty)
                 DropdownButtonFormField<String>(
                   initialValue: paymentMethod,
-                  decoration: const InputDecoration(labelText: 'Payment method'),
+                  decoration: const InputDecoration(
+                    labelText: 'Payment method',
+                  ),
                   items: [
                     for (final m in paymentMethods)
                       DropdownMenuItem(value: m, child: Text(m)),
@@ -499,7 +550,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       );
       if (confirmDelete == true && context.mounted) {
         await runGuarded(
-            context, () => context.read<BakeryRepository>().deleteSale(sale.id));
+          context,
+          () => context.read<BakeryRepository>().deleteSale(sale.id),
+        );
       }
       return;
     }
@@ -517,24 +570,28 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         : 0.0;
 
     await runGuarded(
-        context,
-        () => context.read<BakeryRepository>().updateSale(Sale(
-              id: sale.id,
-              remoteId: sale.remoteId,
-              legacyId: sale.legacyId,
-              batchId: sale.batchId,
-              customerId: sale.customerId,
-              saleDate: sale.saleDate,
-              quantity: quantity,
-              amount: amount,
-              discount: discount,
-              paid: paid,
-              datePaid: paid ? (sale.datePaid ?? DateTime.now()) : null,
-              paymentMethod: paid ? paymentMethod : null,
-              saleType: saleType,
-              notes: sale.notes,
-              updatedAt: DateTime.now(),
-            )));
+      context,
+      () => context.read<BakeryRepository>().updateSale(
+        Sale(
+          id: sale.id,
+          remoteId: sale.remoteId,
+          legacyId: sale.legacyId,
+          batchId: sale.batchId,
+          customerId: sale.customerId,
+          saleDate: sale.saleDate,
+          quantity: quantity,
+          amount: amount,
+          discount: discount,
+          paid: paid,
+          datePaid: paid ? (sale.datePaid ?? DateTime.now()) : null,
+          paymentMethod: paid ? paymentMethod : null,
+          saleType: saleType,
+          notes: sale.notes,
+          isReservation: saleType == SaleType.customerSale && isReservation,
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
   }
 }
 
@@ -547,10 +604,7 @@ class _LabelValueRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text('$label:'),
-        Text(value),
-      ],
+      children: [Text('$label:'), Text(value)],
     );
   }
 }

@@ -9,6 +9,7 @@ import 'auth/auth_gate.dart';
 import 'celebration/celebration_controller.dart';
 import 'celebration/celebration_overlay.dart';
 import 'config.dart';
+import 'customer_portal/customer_soa_portal_screen.dart';
 import 'net/http_client.dart';
 import 'repository/bakery_repository.dart';
 import 'repository/remote_repository.dart';
@@ -36,6 +37,19 @@ class BakeryApp extends StatelessWidget {
       return const MaterialApp(
         debugShowCheckedModeBanner: false,
         home: _MissingConfigScreen(),
+      );
+    }
+
+    final soaToken = Uri.base.queryParameters['soa'];
+    if (soaToken != null && soaToken.isNotEmpty) {
+      return MaterialApp(
+        title: 'Statement of Account',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF8B4513)),
+          useMaterial3: true,
+        ),
+        home: CustomerSoaPortalScreen(token: soaToken),
       );
     }
 

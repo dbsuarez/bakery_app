@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#8b4513">
+  <title>Statement of Account</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="soa.css?v=20261019-4">
+</head>
+<body>
+  <header class="topbar">
+    <img class="top-logo" src="assets/assets/images/logo.png" alt="" width="96" height="44">
+    <span id="business-name">My Bakery</span>
+  </header>
+
+  <main id="app" class="shell" aria-live="polite">
+    <section id="loading" class="state-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Loading your statement…</h1>
+    </section>
+  </main>
+
+  <template id="statement-template">
+    <section>
+      <div class="document-header">
+        <h2>Statement of Account</h2>
+        <time id="statement-date"></time>
+      </div>
+      <div class="brand-rule"></div>
+      <h1 id="customer-name"></h1>
+      <article class="balance-card">
+        <span>Total Due</span>
+        <strong id="balance"></strong>
+        <small id="updated-at"></small>
+      </article>
+      <p class="bookmark-note">
+        Bookmark this page to view your latest statement anytime. Keep this private link secure because anyone with it can view your statement.
+      </p>
+
+      <div class="statement-tabs" role="tablist" aria-label="Transactions">
+        <button id="unpaid-tab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="unpaid-panel" data-tab="unpaid">
+          Unpaid <span id="unpaid-count" class="tab-count"></span>
+        </button>
+        <button id="paid-tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="paid-panel" data-tab="paid">
+          Already paid <span id="paid-count" class="tab-count"></span>
+        </button>
+      </div>
+      <section id="unpaid-panel" class="tab-panel" role="tabpanel" aria-labelledby="unpaid-tab">
+        <div id="transactions" class="transactions"></div>
+      </section>
+      <section id="paid-panel" class="tab-panel" role="tabpanel" aria-labelledby="paid-tab" hidden>
+        <div id="paid-transactions" class="transactions"></div>
+      </section>
+
+      <section id="payment-section" hidden>
+        <h2>Payment QR codes</h2>
+        <p class="help">Please include your name or payment reference when sending payment. Payment is reflected after the bakery records it.</p>
+        <div id="qr-list" class="qr-list"></div>
+      </section>
+
+      <footer>
+        <div class="footer-rule"></div>
+        <span id="footer-note"></span>
+      </footer>
+    </section>
+  </template>
+
+  <script src="soa.js?v=20261019-2" defer></script>
+</body>
+</html>

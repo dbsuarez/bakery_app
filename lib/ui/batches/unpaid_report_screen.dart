@@ -12,6 +12,7 @@ import '../../reports/unpaid_report_pdf.dart' as report;
 import '../../settings/business_settings_controller.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../../utils/segment_label.dart';
 import '../widgets/product_avatar.dart';
 
@@ -83,7 +84,7 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
     double remainingFor(Sale s) =>
         saleRemainingAmount(s, appState.salePayments);
     final total =
-        selectedUnpaid.fold<double>(0, (sum, s) => sum + remainingFor(s));
+        sumMoney(selectedUnpaid.map(remainingFor));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Report')),
@@ -180,7 +181,7 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: Text(
-                                    'Subtotal: ${_currency.format(entry.value.fold<double>(0, (sum, s) => sum + remainingFor(s)))}',
+                                    'Subtotal: ${_currency.format(sumMoney(entry.value.map(remainingFor)))}',
                                     style: Theme.of(context).textTheme.labelMedium,
                                   ),
                                 ),

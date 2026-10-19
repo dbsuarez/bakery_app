@@ -57,3 +57,12 @@ docs/sales_report_*.csv
 docs/unpaid_report_*.pdf
 docs/statement_*.pdf
 docs/unpaid_statement_*.pdf
+
+# Local recovery exports and generated diagnostics
+/backups/
+/test-results/
+/tool/*.png
+
+# Unused high-resolution source/reference artwork
+/docs/images/
+/assets/images/ChatGPT Image*.png

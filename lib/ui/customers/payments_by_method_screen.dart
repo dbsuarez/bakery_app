@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../../utils/note_dialog.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
@@ -40,11 +41,11 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
     }
     final methods = byMethod.keys.toList()
       ..sort(
-        (a, b) => byMethod[b]!
-            .fold<double>(0, (s, e) => s + e.amount)
-            .compareTo(byMethod[a]!.fold<double>(0, (s, e) => s + e.amount)),
+        (a, b) => sumMoney(byMethod[b]!.map((e) => e.amount)).compareTo(
+          sumMoney(byMethod[a]!.map((e) => e.amount)),
+        ),
       );
-    final grandTotal = events.fold<double>(0, (sum, e) => sum + e.amount);
+    final grandTotal = sumMoney(events.map((e) => e.amount));
 
     return Scaffold(
       appBar: AppBar(
@@ -117,10 +118,7 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
                       subtitle: Text('${byMethod[method]!.length} payment(s)'),
                       trailing: Text(
                         _currency.format(
-                          byMethod[method]!.fold<double>(
-                            0,
-                            (s, e) => s + e.amount,
-                          ),
+                          sumMoney(byMethod[method]!.map((e) => e.amount)),
                         ),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),

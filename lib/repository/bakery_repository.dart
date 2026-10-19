@@ -2,11 +2,16 @@ import '../models/batch.dart';
 import '../models/customer.dart';
 import '../models/customer_credit.dart';
 import '../models/customer_favorite.dart';
+import '../models/expense.dart';
+import '../models/favorite_dismissal.dart';
 import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 
 abstract class BakeryRepository {
+  /// Requests an immediate refresh of all watched data.
+  void refresh();
+
   Stream<List<Product>> watchProducts();
   Stream<List<Customer>> watchCustomers();
   Stream<List<Batch>> watchBatches();
@@ -15,6 +20,8 @@ abstract class BakeryRepository {
   Stream<List<CustomerFavorite>> watchCustomerFavorites();
   Stream<List<SalePayment>> watchSalePayments();
   Stream<List<CustomerCredit>> watchCustomerCredits();
+  Stream<List<FavoriteDismissal>> watchFavoriteDismissals();
+  Stream<List<Expense>> watchExpenses();
 
   Future<void> createProduct(Product product);
   Future<void> createCustomer(Customer customer);
@@ -22,8 +29,9 @@ abstract class BakeryRepository {
   Future<void> addSingleSale(Sale sale);
   Future<void> addBatchTransactions(
     int batchId,
-    List<BatchTransactionEntry> entries,
-  );
+    List<BatchTransactionEntry> entries, {
+    bool allowOverallocate = false,
+  });
   Future<void> markSalePaid(
     int saleId,
     DateTime paymentDate, {
@@ -42,7 +50,7 @@ abstract class BakeryRepository {
   Future<void> updateProduct(Product product);
   Future<void> updateCustomer(Customer customer);
   Future<void> updateBatch(Batch batch);
-  Future<void> updateSale(Sale sale);
+  Future<void> updateSale(Sale sale, {bool allowOverallocate = false});
   Future<void> revertBatchRemittance(int batchId);
 
   /// Soft-deletes a transaction entirely - not the same as editing it to
@@ -85,4 +93,14 @@ abstract class BakeryRepository {
     double oldUnitPrice,
     double newUnitPrice,
   );
+
+  /// Marks a customer's favorite-in-stock heads-up handled for [batchId]
+  /// specifically - it'll surface again for the next batch of that product.
+  Future<void> dismissFavorite(int customerId, int batchId);
+
+  Future<void> addExpense(Expense expense);
+  Future<void> updateExpense(Expense expense);
+
+  /// Soft-deletes an expense.
+  Future<void> deleteExpense(int expenseId);
 }

@@ -7,6 +7,7 @@ import '../../analytics/batch_calculations.dart';
 import '../../analytics/customer_calculations.dart';
 import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
+import '../../customer_portal/customer_portal_link_dialog.dart';
 import '../../models/customer.dart';
 import '../../models/customer_credit.dart';
 import '../../models/loyalty_adjustment.dart';
@@ -18,6 +19,7 @@ import '../../settings/business_settings_controller.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/app_date_format.dart';
 import '../../utils/guarded_action.dart';
+import '../../utils/money.dart';
 import '../../utils/note_dialog.dart';
 import '../single_sale/single_sale_screen.dart';
 import '../widgets/product_avatar.dart';
@@ -198,8 +200,20 @@ class CustomerLedgerScreen extends StatelessWidget {
                 if (value == 'markAllPaid') {
                   _markAllPaid(context, appState);
                 }
+                if (value == 'portal') {
+                  showCustomerPortalLinkDialog(context, customer);
+                }
               },
               itemBuilder: (context) => [
+                if (!customer.isPseudoCustomer)
+                  const PopupMenuItem(
+                    value: 'portal',
+                    child: ListTile(
+                      leading: Icon(Icons.link),
+                      title: Text('Customer SOA link'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 if (!customer.isPseudoCustomer)
                   const PopupMenuItem(
                     value: 'markAllPaid',
@@ -1300,7 +1314,7 @@ class CustomerLedgerScreen extends StatelessWidget {
       );
       return;
     }
-    if (amount > remaining + 0.01) {
+    if (toCentavos(amount) > toCentavos(remaining)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1345,9 +1359,8 @@ class CustomerLedgerScreen extends StatelessWidget {
       ).showSnackBar(const SnackBar(content: Text('No unpaid transactions.')));
       return;
     }
-    final totalRemaining = unpaid.fold<double>(
-      0,
-      (sum, s) => sum + saleRemainingAmount(s, appState.salePayments),
+    final totalRemaining = sumMoney(
+      unpaid.map((s) => saleRemainingAmount(s, appState.salePayments)),
     );
 
     final picked = await pickPaymentDateAndMethod(
@@ -1557,7 +1570,25 @@ class _TransactionHistorySectionState
                         }),
                       )
                     : ProductAvatar(imageUrl: product?.imageUrl),
-                title: Text('${product?.title ?? ''} × ${sale.quantity}'),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (sale.isReservation) ...[
+                      Icon(
+                        Icons.bookmark,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        '${product?.title ?? ''} × ${sale.quantity}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
                 subtitle: Text(
                   (!sale.paid && isCustomerSale && paidSoFar > 0
                           ? '${appDateFormat.format(sale.saleDate)} · '
@@ -1699,8 +1730,12 @@ class _TransactionHistorySectionState
             customerId: merge.customerId,
             saleDate: merge.saleDate,
             quantity: merge.quantity + sale.quantity,
-            amount: merge.amount + sale.amount,
-            discount: merge.discount + sale.discount,
+            amount: fromCentavos(
+              toCentavos(merge.amount) + toCentavos(sale.amount),
+            ),
+            discount: fromCentavos(
+              toCentavos(merge.discount) + toCentavos(sale.discount),
+            ),
             paid: false,
             datePaid: null,
             saleType: merge.saleType,
@@ -1852,7 +1887,7 @@ class _PaymentHistoryTab extends StatelessWidget {
       return const Center(child: Text('No payments recorded yet.'));
     }
 
-    final total = payments.fold<double>(0, (sum, p) => sum + p.amount);
+    final total = sumMoney(payments.map((p) => p.amount));
 
     return ListView(
       padding: const EdgeInsets.all(16),

@@ -11,6 +11,7 @@ import '../../models/sale.dart';
 import '../../repository/bakery_repository.dart';
 import '../../settings/business_settings_controller.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../widgets/product_avatar.dart';
 import '../widgets/qr_quick_view.dart';
 
@@ -34,6 +35,7 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
   DateTime? _datePaid;
   String? _paymentMethod;
   SaleType _saleType = SaleType.customerSale;
+  bool _isReservation = false;
   final _notesController = TextEditingController();
 
   @override
@@ -53,15 +55,19 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     // of remittance and business revenue figures, not loyalty.
     final selectableBatches = sortBatchesUnsoldFirstThenAlpha(
       appState.batches
-          .where((b) =>
-              !b.isDeleted &&
-              (b.id == _batchId || remainingQuantity(b, appState.sales) > 0))
+          .where(
+            (b) =>
+                !b.isDeleted &&
+                (b.id == _batchId || remainingQuantity(b, appState.sales) > 0),
+          )
           .toList(),
       appState.sales,
       appState.productById,
     );
     final batch = _batchId == null ? null : appState.batchById(_batchId!);
-    final remaining = batch == null ? null : remainingQuantity(batch, appState.sales);
+    final remaining = batch == null
+        ? null
+        : remainingQuantity(batch, appState.sales);
 
     final business = context.watch<BusinessSettingsController>();
     final redemptionCategory = (isRedemption && batch != null)
@@ -82,8 +88,11 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
             sameDayBonusStartDate: business.sameDayBonusStartDate,
           );
     final costPerUnit = (isRedemption && batch != null)
-        ? pointsCostForBatch(batch, 1,
-            redeemPesosPerPoint: business.redeemPesosPerPoint)
+        ? pointsCostForBatch(
+            batch,
+            1,
+            redeemPesosPerPoint: business.redeemPesosPerPoint,
+          )
         : null;
     final maxByPoints = costPerUnit == null
         ? null
@@ -91,13 +100,16 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     final quantityCap = !isRedemption
         ? remaining
         : (remaining == null
-            ? maxByPoints
-            : (maxByPoints == null
-                ? remaining
-                : (remaining < maxByPoints ? remaining : maxByPoints)));
+              ? maxByPoints
+              : (maxByPoints == null
+                    ? remaining
+                    : (remaining < maxByPoints ? remaining : maxByPoints)));
     final totalCost = (isRedemption && batch != null)
-        ? pointsCostForBatch(batch, _quantity,
-            redeemPesosPerPoint: business.redeemPesosPerPoint)
+        ? pointsCostForBatch(
+            batch,
+            _quantity,
+            redeemPesosPerPoint: business.redeemPesosPerPoint,
+          )
         : 0;
 
     final discount = double.tryParse(_discountController.text) ?? 0;
@@ -107,8 +119,8 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
       } else if (batch != null) {
         final full = _quantity * batch.unitPrice;
         final discounted = full - discount;
-        _amountController.text =
-            (discounted < 0 ? 0 : discounted).toStringAsFixed(2);
+        _amountController.text = (discounted < 0 ? 0 : discounted)
+            .toStringAsFixed(2);
       }
     }
 
@@ -185,8 +197,9 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
               optionsBuilder: (value) {
                 if (value.text.isEmpty) return appState.customers;
                 final query = value.text.toLowerCase();
-                return appState.customers
-                    .where((c) => c.name.toLowerCase().contains(query));
+                return appState.customers.where(
+                  (c) => c.name.toLowerCase().contains(query),
+                );
               },
               onSelected: (c) => setState(() {
                 _customerId = c.id;
@@ -206,38 +219,46 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
               },
             ),
             if (_customerId != null)
-              Builder(builder: (context) {
-                final creditBalance = customerCreditBalance(
-                    _customerId!, appState.customerCredits);
-                if (creditBalance == 0) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    creditBalance > 0
-                        ? 'This customer has ₱${creditBalance.toStringAsFixed(2)} '
-                            'credit available - consider deducting it from this order.'
-                        : 'This customer has a ₱${creditBalance.abs().toStringAsFixed(2)} '
-                            'debit on file.',
-                    style: TextStyle(
-                      color: creditBalance > 0
-                          ? Colors.green.shade700
-                          : Colors.red.shade700,
+              Builder(
+                builder: (context) {
+                  final creditBalance = customerCreditBalance(
+                    _customerId!,
+                    appState.customerCredits,
+                  );
+                  if (creditBalance == 0) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      creditBalance > 0
+                          ? 'This customer has ₱${creditBalance.toStringAsFixed(2)} '
+                                'credit available - consider deducting it from this order.'
+                          : 'This customer has a ₱${creditBalance.abs().toStringAsFixed(2)} '
+                                'debit on file.',
+                      style: TextStyle(
+                        color: creditBalance > 0
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
             DropdownButtonFormField<SaleType>(
               initialValue: _saleType,
               decoration: const InputDecoration(labelText: 'Sale type'),
               items: const [
                 DropdownMenuItem(
-                    value: SaleType.customerSale, child: Text('Customer sale')),
+                  value: SaleType.customerSale,
+                  child: Text('Customer sale'),
+                ),
                 DropdownMenuItem(
-                    value: SaleType.internalConsumption,
-                    child: Text('Internal consumption (freebie/sample)')),
+                  value: SaleType.internalConsumption,
+                  child: Text('Internal consumption (freebie/sample)'),
+                ),
                 DropdownMenuItem(
-                    value: SaleType.pointsRedemption,
-                    child: Text('Redeem loyalty points')),
+                  value: SaleType.pointsRedemption,
+                  child: Text('Redeem loyalty points'),
+                ),
               ],
               onChanged: (v) => setState(() {
                 _saleType = v!;
@@ -254,8 +275,10 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                     icon: const Icon(Icons.remove_circle_outline),
                     onPressed: () => _setQuantity(_quantity - 1, quantityCap),
                   ),
-                  Text('$_quantity',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    '$_quantity',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
                     onPressed: quantityCap != null && _quantity >= quantityCap
@@ -285,11 +308,13 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                 controller: _discountController,
                 decoration: const InputDecoration(
                   labelText: 'Discount (optional)',
-                  helperText: 'Knocked off the full price - tracked separately '
+                  helperText:
+                      'Knocked off the full price - tracked separately '
                       'from the charged amount',
                 ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: (_) => setState(() {}),
                 validator: (v) {
                   if (v == null || v.isEmpty) return null;
@@ -298,12 +323,23 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                   return null;
                 },
               ),
+            if (_saleType == SaleType.customerSale)
+              SwitchListTile(
+                title: const Text('Reservation'),
+                subtitle: const Text(
+                  'Customer has committed to this before the batch is '
+                  'actually ready/in stock',
+                ),
+                value: _isReservation,
+                onChanged: (v) => setState(() => _isReservation = v),
+              ),
             TextFormField(
               controller: _amountController,
               enabled: !isRedemption,
               decoration: const InputDecoration(labelText: 'Amount'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               onChanged: (_) => setState(() => _amountEdited = true),
               validator: (v) {
                 final n = double.tryParse(v ?? '');
@@ -376,26 +412,28 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     final repo = context.read<BakeryRepository>();
     final appState = context.read<AppState>();
     final batch = appState.batchById(_batchId!);
-    final remainingBefore =
-        batch == null ? 0 : remainingQuantity(batch, appState.sales);
+    final remainingBefore = batch == null
+        ? 0
+        : remainingQuantity(batch, appState.sales);
     final quantity = _quantity;
     final isRedemption = _saleType == SaleType.pointsRedemption;
-    final countsTowardStock = _saleType == SaleType.customerSale ||
+    final countsTowardStock =
+        _saleType == SaleType.customerSale ||
         _saleType == SaleType.internalConsumption ||
         isRedemption;
     // Final safety net: state may have drifted since the stepper was last
     // clamped (e.g. another device sold the remaining stock in between).
     if (countsTowardStock && quantity > remainingBefore) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Only $remainingBefore left in this batch.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Only $remainingBefore left in this batch.')),
+      );
       return;
     }
     final business = context.read<BusinessSettingsController>();
     if (isRedemption && batch != null) {
       final category =
           appState.productById(batch.productId)?.category ??
-              ProductCategory.bakery;
+          ProductCategory.bakery;
       final pointsBalance = customerPointsBalance(
         _customerId!,
         appState.sales,
@@ -408,12 +446,19 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
         redeemPesosPerPoint: business.redeemPesosPerPoint,
         sameDayBonusStartDate: business.sameDayBonusStartDate,
       );
-      final cost = pointsCostForBatch(batch, quantity,
-          redeemPesosPerPoint: business.redeemPesosPerPoint);
+      final cost = pointsCostForBatch(
+        batch,
+        quantity,
+        redeemPesosPerPoint: business.redeemPesosPerPoint,
+      );
       if (cost > pointsBalance) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Only $pointsBalance points available - this costs $cost.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Only $pointsBalance points available - this costs $cost.',
+            ),
+          ),
+        );
         return;
       }
     }
@@ -432,50 +477,62 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
     Sale? mergeTarget;
     if (!paid) {
       final existing = appState.sales
-          .where((s) =>
-              s.batchId == _batchId &&
-              s.customerId == _customerId &&
-              s.saleType == _saleType &&
-              !s.paid &&
-              !s.isDeleted)
+          .where(
+            (s) =>
+                s.batchId == _batchId &&
+                s.customerId == _customerId &&
+                s.saleType == _saleType &&
+                !s.paid &&
+                !s.isDeleted,
+          )
           .toList();
       if (existing.length == 1) mergeTarget = existing.first;
     }
 
     try {
       if (mergeTarget != null) {
-        await repo.updateSale(Sale(
-          id: mergeTarget.id,
-          batchId: mergeTarget.batchId,
-          customerId: mergeTarget.customerId,
-          saleDate: mergeTarget.saleDate,
-          quantity: mergeTarget.quantity + quantity,
-          amount: mergeTarget.amount + amount,
-          discount: mergeTarget.discount + discount,
-          paid: false,
-          datePaid: null,
-          saleType: mergeTarget.saleType,
-          notes: _notesController.text.isEmpty
-              ? mergeTarget.notes
-              : _notesController.text,
-          updatedAt: DateTime.now(),
-        ));
+        await repo.updateSale(
+          Sale(
+            id: mergeTarget.id,
+            batchId: mergeTarget.batchId,
+            customerId: mergeTarget.customerId,
+            saleDate: mergeTarget.saleDate,
+            quantity: mergeTarget.quantity + quantity,
+            amount: fromCentavos(
+              toCentavos(mergeTarget.amount) + toCentavos(amount),
+            ),
+            discount: fromCentavos(
+              toCentavos(mergeTarget.discount) + toCentavos(discount),
+            ),
+            paid: false,
+            datePaid: null,
+            saleType: mergeTarget.saleType,
+            notes: _notesController.text.isEmpty
+                ? mergeTarget.notes
+                : _notesController.text,
+            isReservation: mergeTarget.isReservation || _isReservation,
+            updatedAt: DateTime.now(),
+          ),
+        );
       } else {
-        await repo.addSingleSale(Sale(
-          id: 0,
-          batchId: _batchId!,
-          customerId: _customerId!,
-          saleDate: DateTime.now(),
-          quantity: quantity,
-          amount: amount,
-          discount: discount,
-          paid: paid,
-          datePaid: datePaid,
-          paymentMethod: paid ? _paymentMethod : null,
-          saleType: _saleType,
-          notes: _notesController.text.isEmpty ? null : _notesController.text,
-          updatedAt: DateTime.now(),
-        ));
+        await repo.addSingleSale(
+          Sale(
+            id: 0,
+            batchId: _batchId!,
+            customerId: _customerId!,
+            saleDate: DateTime.now(),
+            quantity: quantity,
+            amount: amount,
+            discount: discount,
+            paid: paid,
+            datePaid: datePaid,
+            paymentMethod: paid ? _paymentMethod : null,
+            saleType: _saleType,
+            notes: _notesController.text.isEmpty ? null : _notesController.text,
+            isReservation: _saleType == SaleType.customerSale && _isReservation,
+            updatedAt: DateTime.now(),
+          ),
+        );
       }
       if (!context.mounted) return;
       // Meaningful confetti (spec section 12): the batch just sold out.
@@ -487,8 +544,9 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }

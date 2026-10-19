@@ -35,7 +35,11 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
   }
 
   Future<void> _uploadMany(BuildContext context) async {
-    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
+    final picked = await ImagePicker().pickMultiImage(
+      imageQuality: 82,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
     if (picked.isEmpty || !context.mounted) return;
 
     setState(() {
@@ -57,11 +61,15 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
     if (!context.mounted) return;
     setState(() => _uploading = false);
     _load();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(failures == 0
-          ? 'Uploaded ${picked.length} image(s).'
-          : 'Uploaded ${picked.length - failures} of ${picked.length} image(s) - $failures failed.'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failures == 0
+              ? 'Uploaded ${picked.length} image(s).'
+              : 'Uploaded ${picked.length - failures} of ${picked.length} image(s) - $failures failed.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -107,7 +115,9 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Could not load images: ${snapshot.error}'));
+            return Center(
+              child: Text('Could not load images: ${snapshot.error}'),
+            );
           }
           final files = snapshot.data ?? [];
           if (files.isEmpty) {
@@ -141,9 +151,11 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
                             ..addAll(unused.map((f) => f.path));
                         }
                       }),
-                      child: Text(_selected.length == unused.length
-                          ? 'Deselect all'
-                          : 'Select all'),
+                      child: Text(
+                        _selected.length == unused.length
+                            ? 'Deselect all'
+                            : 'Select all',
+                      ),
                     ),
                 ],
               ),
@@ -168,8 +180,10 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
                   ),
                 ),
               const SizedBox(height: 24),
-              Text('In use (${used.length})',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'In use (${used.length})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 4),
               _PhotoGrid(
                 files: used,
@@ -179,14 +193,16 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
                 onToggle: (_) {},
                 onUsedTap: (path, url) {
                   final product = usedByUrl[stripCacheBust(url)];
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(
-                      product == null
-                          ? 'This image is in use and can\'t be deleted.'
-                          : 'This image is used by "$product" - remove or change '
-                              'that product\'s photo first if you want to delete it.',
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        product == null
+                            ? 'This image is in use and can\'t be deleted.'
+                            : 'This image is used by "$product" - remove or change '
+                                  'that product\'s photo first if you want to delete it.',
+                      ),
                     ),
-                  ));
+                  );
                 },
                 onPreview: (index) => showFullscreenImageGallery(
                   context,
@@ -253,8 +269,10 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
         .map((p) => stripCacheBust(p.imageUrl!))
         .toSet();
     final toDelete = _selected
-        .where((path) =>
-            !freshUsedUrls.contains(stripCacheBust(publicUrlForPath(path))))
+        .where(
+          (path) =>
+              !freshUsedUrls.contains(stripCacheBust(publicUrlForPath(path))),
+        )
         .toList();
     final skipped = _selected.length - toDelete.length;
 
@@ -262,16 +280,19 @@ class _MediaManagerScreenState extends State<MediaManagerScreen> {
       if (toDelete.isNotEmpty) await deleteProductPhotos(toDelete);
       _load();
       if (skipped > 0 && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            '$skipped image(s) skipped - they became linked to a product just now.',
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$skipped image(s) skipped - they became linked to a product just now.',
+            ),
           ),
-        ));
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
@@ -316,8 +337,8 @@ class _PhotoGrid extends StatelessWidget {
           onTap: selectable
               ? () => onToggle(file.path)
               : (onUsedTap == null
-                  ? null
-                  : () => onUsedTap!(file.path, file.publicUrl)),
+                    ? null
+                    : () => onUsedTap!(file.path, file.publicUrl)),
           child: Column(
             children: [
               Expanded(
@@ -327,7 +348,10 @@ class _PhotoGrid extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: CachedNetworkImage(
-                        imageUrl: file.publicUrl,
+                        imageUrl: productThumbnailUrl(
+                          file.publicUrl,
+                          height: 400,
+                        ),
                         fit: BoxFit.cover,
                         errorWidget: (context, url, error) =>
                             const Icon(Icons.broken_image_outlined),
@@ -346,7 +370,9 @@ class _PhotoGrid extends StatelessWidget {
                             isSelected
                                 ? Icons.check_circle
                                 : Icons.circle_outlined,
-                            color: isSelected ? Colors.greenAccent : Colors.white,
+                            color: isSelected
+                                ? Colors.greenAccent
+                                : Colors.white,
                           ),
                         ),
                       )
@@ -360,8 +386,11 @@ class _PhotoGrid extends StatelessWidget {
                             color: Colors.black45,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.lock_outline,
-                              size: 16, color: Colors.white),
+                          child: const Icon(
+                            Icons.lock_outline,
+                            size: 16,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     if (onPreview != null)
@@ -376,8 +405,11 @@ class _PhotoGrid extends StatelessWidget {
                             onTap: () => onPreview!(index),
                             child: const Padding(
                               padding: EdgeInsets.all(4),
-                              child: Icon(Icons.zoom_in,
-                                  size: 16, color: Colors.white),
+                              child: Icon(
+                                Icons.zoom_in,
+                                size: 16,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),

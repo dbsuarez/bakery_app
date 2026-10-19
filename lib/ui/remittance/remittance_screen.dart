@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../analytics/batch_calculations.dart';
 import '../../app_state.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../batches/batch_detail_screen.dart';
 import '../widgets/product_avatar.dart';
 
@@ -54,9 +55,8 @@ class _BatchList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = batches.fold<double>(
-      0.0,
-      (sum, b) => sum + batchRevenue(b.id, appState.sales),
+    final total = sumMoney(
+      batches.map((b) => batchRevenue(b.id, appState.sales)),
     );
     return Column(
       children: [

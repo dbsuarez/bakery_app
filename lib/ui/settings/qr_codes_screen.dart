@@ -58,7 +58,12 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
   }
 
   Future<void> _upload(int slot) async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 2000,
+      maxHeight: 2000,
+    );
     if (file == null || !mounted) return;
     setState(() => _uploading.add(slot));
     try {
@@ -72,8 +77,9 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _uploading.remove(slot));
@@ -105,8 +111,9 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
@@ -126,7 +133,9 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
           if (snapshot.hasError) {
             return Center(child: Text('Could not load: ${snapshot.error}'));
           }
-          final files = {for (final f in snapshot.data ?? <QrPhotoFile>[]) f.slot: f};
+          final files = {
+            for (final f in snapshot.data ?? <QrPhotoFile>[]) f.slot: f,
+          };
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -197,7 +206,9 @@ class _QrSlotTile extends StatelessWidget {
                 height: 64,
                 child: file == null
                     ? Container(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         child: const Icon(Icons.qr_code_2, size: 32),
                       )
                     : CachedNetworkImage(
@@ -213,7 +224,10 @@ class _QrSlotTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('QR $slot', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'QR $slot',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   Text(file == null ? 'Not uploaded' : 'Uploaded'),
                 ],
               ),
@@ -231,7 +245,9 @@ class _QrSlotTile extends StatelessWidget {
               )
             else ...[
               IconButton(
-                icon: Icon(file == null ? Icons.upload_outlined : Icons.edit_outlined),
+                icon: Icon(
+                  file == null ? Icons.upload_outlined : Icons.edit_outlined,
+                ),
                 tooltip: file == null ? 'Upload' : 'Replace',
                 onPressed: onUpload,
               ),

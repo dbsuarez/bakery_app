@@ -1,6 +1,7 @@
 import '../models/batch.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
+import '../utils/money.dart';
 
 /// Spec section 7 rule 7: batch remaining quantity = produced quantity -
 /// allocated quantity. Real customer sales, internal consumption
@@ -10,12 +11,14 @@ import '../models/sale.dart';
 /// revenue.
 int allocatedQuantity(int batchId, List<Sale> sales) {
   return sales
-      .where((s) =>
-          s.batchId == batchId &&
-          !s.isDeleted &&
-          (s.saleType == SaleType.customerSale ||
-              s.saleType == SaleType.internalConsumption ||
-              s.saleType == SaleType.pointsRedemption))
+      .where(
+        (s) =>
+            s.batchId == batchId &&
+            !s.isDeleted &&
+            (s.saleType == SaleType.customerSale ||
+                s.saleType == SaleType.internalConsumption ||
+                s.saleType == SaleType.pointsRedemption),
+      )
       .fold(0, (sum, s) => sum + s.quantity);
 }
 
@@ -24,9 +27,11 @@ int remainingQuantity(Batch batch, List<Sale> sales) {
 }
 
 double batchRevenue(int batchId, List<Sale> sales) {
-  return sales
-      .where((s) => s.batchId == batchId && !s.isDeleted)
-      .fold(0.0, (sum, s) => sum + s.amount);
+  return sumMoney(
+    sales
+        .where((s) => s.batchId == batchId && !s.isDeleted)
+        .map((s) => s.amount),
+  );
 }
 
 /// Batches with remaining (unsold) stock first, then sold-out batches;

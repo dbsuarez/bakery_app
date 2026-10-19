@@ -48,8 +48,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<_LockState> _loadLockState(AppLockService lockService) async {
     final auth = LocalAuthentication();
     final enabled = await lockService.isEnabled();
-    final biometricEnabled =
-        enabled ? await lockService.isBiometricEnabled() : false;
+    final biometricEnabled = enabled
+        ? await lockService.isBiometricEnabled()
+        : false;
     bool biometricAvailable = false;
     try {
       biometricAvailable = await auth.isDeviceSupported();
@@ -66,8 +67,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final lockService = context.watch<AppLockService?>();
-    _lockStateFuture ??=
-        lockService == null ? null : _loadLockState(lockService);
+    _lockStateFuture ??= lockService == null
+        ? null
+        : _loadLockState(lockService);
     final email = Supabase.instance.client.auth.currentUser?.email;
     final repo = context.read<BakeryRepository>() as RemoteRepository;
 
@@ -131,9 +133,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Payment QR codes'),
             subtitle: const Text('Up to 3 - shown on statement PDFs'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const QrCodesScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const QrCodesScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.bakery_dining_outlined),
@@ -181,23 +183,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.upload_file),
             title: const Text('Import Latest Spreadsheet'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ImportScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ImportScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.restore),
             title: const Text('Restore from Backup'),
-            subtitle: const Text('Load data from an exported JSON backup'),
+            subtitle: const Text('Load data and media from a ZIP backup'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RestoreScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const RestoreScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.backup_outlined),
-            title: const Text('Export Backup (JSON)'),
-            subtitle: const Text('Save a copy of all products, customers, batches, and sales'),
+            title: const Text('Export Backup (ZIP + media)'),
+            subtitle: const Text(
+              'Save a copy of all products, customers, batches, and sales',
+            ),
             trailing: _exporting
                 ? const SizedBox(
                     width: 20,
@@ -218,7 +222,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.chevron_right),
-            onTap: _exportingReport ? null : () => _showReportRangeDialog(context),
+            onTap: _exportingReport
+                ? null
+                : () => _showReportRangeDialog(context),
           ),
           const _SectionHeader('Appearance'),
           Consumer<ThemeController>(
@@ -316,13 +322,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     AppLockService lockService,
   ) async {
-    final pin = await _promptPin(context, title: 'Enter current PIN to turn off');
+    final pin = await _promptPin(
+      context,
+      title: 'Enter current PIN to turn off',
+    );
     if (pin == null) return;
-    final ok = await lockService.verifyPin(pin);
     if (!context.mounted) return;
+    final ok = await _verifyCurrentPin(context, lockService, pin);
+    if (!context.mounted) return;
+    if (ok == null) return;
     if (!ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Incorrect PIN')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Incorrect PIN')));
       return;
     }
     await lockService.disable();
@@ -336,11 +348,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final currentPin = await _promptPin(context, title: 'Enter current PIN');
     if (currentPin == null) return;
-    final ok = await lockService.verifyPin(currentPin);
     if (!context.mounted) return;
+    final ok = await _verifyCurrentPin(context, lockService, currentPin);
+    if (!context.mounted) return;
+    if (ok == null) return;
     if (!ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Incorrect PIN')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Incorrect PIN')));
       return;
     }
     final newPin = await _promptNewPin(context);
@@ -348,8 +363,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await lockService.setPin(newPin);
     if (!context.mounted) return;
     _reloadLockState(lockService);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('PIN updated')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('PIN updated')));
+  }
+
+  Future<bool?> _verifyCurrentPin(
+    BuildContext context,
+    AppLockService lockService,
+    String pin,
+  ) async {
+    try {
+      final ok = await lockService.verifyPin(pin);
+      if (!ok) {
+        final retryAfter = await lockService.currentLockout();
+        if (retryAfter > Duration.zero) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Too many attempts. Try again in '
+                  '${retryAfter.inSeconds + 1} seconds.',
+                ),
+              ),
+            );
+          }
+          return null;
+        }
+      }
+      return ok;
+    } on PinLockedException catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Too many attempts. Try again in '
+              '${error.retryAfter.inSeconds + 1} seconds.',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
   }
 
   Future<String?> _promptPin(
@@ -439,7 +494,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () {
                   final pin = pinController.text;
                   if (pin.length < 4) {
-                    setDialogState(() => error = 'PIN must be at least 4 digits');
+                    setDialogState(
+                      () => error = 'PIN must be at least 4 digits',
+                    );
                     return;
                   }
                   if (pin != confirmController.text) {
@@ -491,12 +548,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     BusinessSettingsController business,
   ) async {
-    final rateController =
-        TextEditingController(text: business.pesosPerPoint.toStringAsFixed(0));
+    final rateController = TextEditingController(
+      text: business.pesosPerPoint.toStringAsFixed(0),
+    );
     final bonusController = TextEditingController(
-        text: business.sameDayBonusPercent.toStringAsFixed(0));
+      text: business.sameDayBonusPercent.toStringAsFixed(0),
+    );
     final redeemRateController = TextEditingController(
-        text: business.redeemPesosPerPoint.toStringAsFixed(0));
+      text: business.redeemPesosPerPoint.toStringAsFixed(0),
+    );
     var bonusStartDate = business.sameDayBonusStartDate;
     final result = await showDialog<bool>(
       context: context,
@@ -513,17 +573,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     labelText: 'Pesos per point (earning)',
                     helperText: 'e.g. 10 means ₱10 spent = 1 point earned',
                   ),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 TextField(
                   controller: bonusController,
                   decoration: const InputDecoration(
                     labelText: 'Same-day payment bonus (%)',
-                    helperText: 'Extra points when paid the same day as the sale',
+                    helperText:
+                        'Extra points when paid the same day as the sale',
                   ),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -553,8 +616,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     labelText: 'Peso value per point (redeeming)',
                     helperText: 'e.g. 1 means 1 point covers ₱1 of a product',
                   ),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
               ],
             ),
@@ -632,7 +696,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           Chip(
                             label: Text(g),
                             onDeleted: () => setDialogState(
-                                () => groups = groups.where((x) => x != g).toList()),
+                              () =>
+                                  groups = groups.where((x) => x != g).toList(),
+                            ),
                           ),
                       ],
                     ),
@@ -642,8 +708,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: TextField(
                           controller: newGroupController,
-                          decoration:
-                              const InputDecoration(labelText: 'New group name'),
+                          decoration: const InputDecoration(
+                            labelText: 'New group name',
+                          ),
                           onSubmitted: (_) => addGroup(),
                         ),
                       ),
@@ -717,7 +784,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           Chip(
                             label: Text(m),
                             onDeleted: () => setDialogState(
-                                () => methods = methods.where((x) => x != m).toList()),
+                              () => methods = methods
+                                  .where((x) => x != m)
+                                  .toList(),
+                            ),
                           ),
                       ],
                     ),
@@ -727,8 +797,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: TextField(
                           controller: newMethodController,
-                          decoration:
-                              const InputDecoration(labelText: 'New method name'),
+                          decoration: const InputDecoration(
+                            labelText: 'New method name',
+                          ),
                           onSubmitted: (_) => addMethod(),
                         ),
                       ),
@@ -765,8 +836,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await backup.exportBackup(context.read<AppState>());
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -807,15 +879,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (choice) {
       case 'this_month':
         start = DateTime(now.year, now.month, 1);
-        end = DateTime(now.year, now.month + 1, 1)
-            .subtract(const Duration(milliseconds: 1));
+        end = DateTime(
+          now.year,
+          now.month + 1,
+          1,
+        ).subtract(const Duration(milliseconds: 1));
         rangeLabel = DateFormat('yyyy-MM').format(now);
         break;
       case 'last_month':
         final lastMonth = DateTime(now.year, now.month - 1, 1);
         start = lastMonth;
-        end = DateTime(now.year, now.month, 1)
-            .subtract(const Duration(milliseconds: 1));
+        end = DateTime(
+          now.year,
+          now.month,
+          1,
+        ).subtract(const Duration(milliseconds: 1));
         rangeLabel = DateFormat('yyyy-MM').format(lastMonth);
         break;
       case 'all_time':
@@ -835,8 +913,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
         if (range == null || !context.mounted) return;
         start = range.start;
-        end = range.end.add(const Duration(
-            hours: 23, minutes: 59, seconds: 59));
+        end = range.end.add(
+          const Duration(hours: 23, minutes: 59, seconds: 59),
+        );
         rangeLabel =
             '${appDateFormat.format(range.start)}_to_${appDateFormat.format(range.end)}';
         break;
@@ -854,8 +933,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _exportingReport = false);
@@ -874,10 +954,10 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }
@@ -1029,15 +1109,17 @@ class _CustomThemeSwatch extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             gradient: color == null
-                ? const SweepGradient(colors: [
-                    Colors.red,
-                    Colors.yellow,
-                    Colors.green,
-                    Colors.cyan,
-                    Colors.blue,
-                    Colors.purple,
-                    Colors.red,
-                  ])
+                ? const SweepGradient(
+                    colors: [
+                      Colors.red,
+                      Colors.yellow,
+                      Colors.green,
+                      Colors.cyan,
+                      Colors.blue,
+                      Colors.purple,
+                      Colors.red,
+                    ],
+                  )
                 : null,
             shape: BoxShape.circle,
             border: selected
@@ -1087,13 +1169,12 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
     super.dispose();
   }
 
-  Color get _color =>
-      Color.fromARGB(255, _r.round(), _g.round(), _b.round());
+  Color get _color => Color.fromARGB(255, _r.round(), _g.round(), _b.round());
 
   String get _hex =>
       '#${_r.round().toRadixString(16).padLeft(2, '0')}'
-      '${_g.round().toRadixString(16).padLeft(2, '0')}'
-      '${_b.round().toRadixString(16).padLeft(2, '0')}'
+              '${_g.round().toRadixString(16).padLeft(2, '0')}'
+              '${_b.round().toRadixString(16).padLeft(2, '0')}'
           .toUpperCase();
 
   void _applyHex(String value) {

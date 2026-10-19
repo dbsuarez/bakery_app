@@ -27,7 +27,11 @@ flutter build web --dart-define-from-file=dart_define.json
 
 Supabase credentials live in `dart_define.json` (gitignored) at the repo root:
 ```json
-{ "SUPABASE_URL": "https://xxx.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_..." }
+{
+  "SUPABASE_URL": "https://xxx.supabase.co",
+  "SUPABASE_ANON_KEY": "sb_publishable_...",
+  "CUSTOMER_PORTAL_URL": "https://your-site.netlify.app/"
+}
 ```
 Read via `String.fromEnvironment` in `lib/config.dart`. Without it, `SupabaseConfig.isConfigured` is false and `main.dart` shows a static error screen instead of the app.
 

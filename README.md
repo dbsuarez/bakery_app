@@ -36,7 +36,11 @@ Supabase schema details.
 Supabase credentials go in a gitignored `dart_define.json` at the repo root:
 
 ```json
-{ "SUPABASE_URL": "https://xxx.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_..." }
+{
+  "SUPABASE_URL": "https://xxx.supabase.co",
+  "SUPABASE_ANON_KEY": "sb_publishable_...",
+  "CUSTOMER_PORTAL_URL": "https://your-site.netlify.app/"
+}
 ```
 
 Run the SQL in `docs/supabase_bakery_database_setup.sql` against your

@@ -22,9 +22,9 @@ class ProductsListScreen extends StatefulWidget {
 enum _CategoryFilter { all, bakery, merchandise }
 
 IconData _categoryIcon(ProductCategory category) => switch (category) {
-      ProductCategory.bakery => Icons.bakery_dining_outlined,
-      ProductCategory.merchandise => Icons.shopping_bag_outlined,
-    };
+  ProductCategory.bakery => Icons.bakery_dining_outlined,
+  ProductCategory.merchandise => Icons.shopping_bag_outlined,
+};
 
 class _ProductsListScreenState extends State<ProductsListScreen> {
   String _search = '';
@@ -41,27 +41,34 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final products = appState.products
-        .where((p) => p.title.toLowerCase().contains(_search.toLowerCase()))
-        .where((p) => p.isArchived == _showArchived)
-        .where((p) => switch (_filter) {
-              _CategoryFilter.all => true,
-              _CategoryFilter.bakery => p.category == ProductCategory.bakery,
-              _CategoryFilter.merchandise =>
-                p.category == ProductCategory.merchandise,
-            })
-        .toList()
-      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    final products =
+        appState.products
+            .where((p) => p.title.toLowerCase().contains(_search.toLowerCase()))
+            .where((p) => p.isArchived == _showArchived)
+            .where(
+              (p) => switch (_filter) {
+                _CategoryFilter.all => true,
+                _CategoryFilter.bakery => p.category == ProductCategory.bakery,
+                _CategoryFilter.merchandise =>
+                  p.category == ProductCategory.merchandise,
+              },
+            )
+            .toList()
+          ..sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+          );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Products'),
         actions: [
           IconButton(
-            icon: Icon(_showArchived
-                ? Icons.unarchive_outlined
-                : Icons.archive_outlined),
-            tooltip: _showArchived ? 'Show active products' : 'Show archived products',
+            icon: Icon(
+              _showArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+            ),
+            tooltip: _showArchived
+                ? 'Show active products'
+                : 'Show archived products',
             onPressed: () => setState(() => _showArchived = !_showArchived),
           ),
           IconButton(
@@ -174,9 +181,11 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
                           children: [
                             Icon(_categoryIcon(product.category), size: 14),
                             const SizedBox(width: 4),
-                            Text(product.category == ProductCategory.merchandise
-                                ? 'Merchandise'
-                                : 'Bakery'),
+                            Text(
+                              product.category == ProductCategory.merchandise
+                                  ? 'Merchandise'
+                                  : 'Bakery',
+                            ),
                           ],
                         ),
                         trailing: const Icon(Icons.chevron_right),
@@ -211,10 +220,13 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
               SegmentedButton<ProductCategory>(
                 segments: const [
                   ButtonSegment(
-                      value: ProductCategory.bakery, label: Text('Bakery')),
+                    value: ProductCategory.bakery,
+                    label: Text('Bakery'),
+                  ),
                   ButtonSegment(
-                      value: ProductCategory.merchandise,
-                      label: Text('Merchandise')),
+                    value: ProductCategory.merchandise,
+                    label: Text('Merchandise'),
+                  ),
                 ],
                 selected: {category},
                 onSelectionChanged: (s) =>
@@ -240,13 +252,13 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
     await runGuarded(
       context,
       () => context.read<BakeryRepository>().createProduct(
-            Product(
-              id: 0,
-              title: title,
-              category: category,
-              updatedAt: DateTime.now(),
-            ),
-          ),
+        Product(
+          id: 0,
+          title: title,
+          category: category,
+          updatedAt: DateTime.now(),
+        ),
+      ),
     );
   }
 
@@ -263,14 +275,21 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
         builder: (context, setDialogState) {
           Future<void> pickPhoto() async {
             if (product.remoteId == null) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text(
-                    'This product hasn\'t synced yet - try again shortly.'),
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'This product hasn\'t synced yet - try again shortly.',
+                  ),
+                ),
+              );
               return;
             }
-            final picked = await ImagePicker()
-                .pickImage(source: ImageSource.gallery, imageQuality: 85);
+            final picked = await ImagePicker().pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 82,
+              maxWidth: 1600,
+              maxHeight: 1600,
+            );
             if (picked == null) return;
             setDialogState(() => uploading = true);
             try {
@@ -333,7 +352,8 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
                     icon: const Icon(Icons.no_photography_outlined, size: 18),
                     label: const Text('Remove photo'),
                     style: TextButton.styleFrom(
-                        foregroundColor: Colors.red.shade700),
+                      foregroundColor: Colors.red.shade700,
+                    ),
                   ),
                 const SizedBox(height: 16),
                 TextField(
@@ -345,10 +365,13 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
                 SegmentedButton<ProductCategory>(
                   segments: const [
                     ButtonSegment(
-                        value: ProductCategory.bakery, label: Text('Bakery')),
+                      value: ProductCategory.bakery,
+                      label: Text('Bakery'),
+                    ),
                     ButtonSegment(
-                        value: ProductCategory.merchandise,
-                        label: Text('Merchandise')),
+                      value: ProductCategory.merchandise,
+                      label: Text('Merchandise'),
+                    ),
                   ],
                   selected: {category},
                   onSelectionChanged: (s) =>

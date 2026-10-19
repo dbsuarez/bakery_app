@@ -10,14 +10,19 @@ import '../../app_state.dart';
 import '../../build_info.dart';
 import '../../celebration/celebration_controller.dart';
 import '../../models/batch.dart';
+import '../../models/customer.dart';
+import '../../repository/bakery_repository.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/guarded_action.dart';
+import '../../utils/money.dart';
 import '../../utils/segment_label.dart';
 import '../batch_add_transactions/batch_add_transactions_screen.dart';
 import '../batches/batch_detail_screen.dart';
 import '../batches/batch_form_screen.dart';
 import '../batches/batches_list_screen.dart';
 import '../customers/customer_ledger_screen.dart';
+import '../expenses/expenses_screen.dart';
 import '../remittance/remittance_screen.dart';
 import '../single_sale/single_sale_screen.dart';
 import '../widgets/product_avatar.dart';
@@ -54,6 +59,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       batches: appState.batches,
       sales: appState.sales,
       salePayments: appState.salePayments,
+      expenses: appState.expenses,
     );
 
     WidgetsBinding.instance.addPostFrameCallback(
@@ -234,6 +240,13 @@ class _QuickActions extends StatelessWidget {
           icon: const Icon(Icons.point_of_sale),
           label: const Text('Log Single Transaction'),
         ),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+          icon: const Icon(Icons.receipt_long),
+          label: const Text('Expenses'),
+        ),
       ],
     );
   }
@@ -245,16 +258,25 @@ class _FavoritesInStock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final entries = <({String productTitle, List<String> customerNames})>[];
+    final entries =
+        <({int batchId, String productTitle, List<Customer> fans})>[];
     for (final batch in appState.batches) {
       if (batch.isDeleted) continue;
       if (remainingQuantity(batch, appState.sales) <= 0) continue;
-      final fans = appState.customersFavoriting(batch.productId);
+      final dismissedCustomerIds = appState.favoriteDismissals
+          .where((d) => d.batchId == batch.id)
+          .map((d) => d.customerId)
+          .toSet();
+      final fans = appState
+          .customersFavoriting(batch.productId)
+          .where((c) => !dismissedCustomerIds.contains(c.id))
+          .toList();
       if (fans.isEmpty) continue;
       final product = appState.productById(batch.productId);
       entries.add((
+        batchId: batch.id,
         productTitle: product?.title ?? '?',
-        customerNames: fans.map((c) => c.name).toList(),
+        fans: fans,
       ));
     }
     if (entries.isEmpty) return const SizedBox.shrink();
@@ -290,8 +312,25 @@ class _FavoritesInStock extends StatelessWidget {
                 for (final e in entries)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${e.productTitle} - ${e.customerNames.join(', ')}',
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${e.productTitle} - '
+                            '${e.fans.map((c) => c.name).join(', ')}',
+                          ),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(foregroundColor: onCard),
+                          onPressed: () => runGuarded(context, () async {
+                            final repo = context.read<BakeryRepository>();
+                            for (final c in e.fans) {
+                              await repo.dismissFavorite(c.id, e.batchId);
+                            }
+                          }),
+                          child: const Text('Fulfilled'),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -432,6 +471,24 @@ class _MoneyCards extends StatelessWidget {
             ? 'Set a unit cost on a batch to see this'
             : 'Revenue minus cost, batches produced this month',
       ),
+      if (data.thisMonthExpenses > 0)
+        _StatTile(
+          label: 'Expenses (this month)',
+          value: _currency.format(data.thisMonthExpenses),
+          description: 'Standalone business expenses this month',
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+        ),
+      _StatTile(
+        label: 'Net profit (this month)',
+        value: data.thisMonthNetProfit == null
+            ? '-'
+            : _currency.format(data.thisMonthNetProfit),
+        description: data.thisMonthNetProfit == null
+            ? 'Set a unit cost on a batch to see this'
+            : 'Est. profit minus expenses, this month',
+      ),
       _StatTile(
         label: 'All-time revenue',
         value: _currency.format(data.allTimeRevenue),
@@ -445,6 +502,24 @@ class _MoneyCards extends StatelessWidget {
         description: data.allTimeEstimatedProfit == null
             ? 'Set a unit cost on a batch to see this'
             : 'Revenue minus cost, across every batch',
+      ),
+      if (data.allTimeExpenses > 0)
+        _StatTile(
+          label: 'Expenses (all time)',
+          value: _currency.format(data.allTimeExpenses),
+          description: 'All standalone business expenses ever recorded',
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+        ),
+      _StatTile(
+        label: 'Net profit (all time)',
+        value: data.allTimeNetProfit == null
+            ? '-'
+            : _currency.format(data.allTimeNetProfit),
+        description: data.allTimeNetProfit == null
+            ? 'Set a unit cost on a batch to see this'
+            : 'Est. profit minus expenses',
       ),
       if (data.averageOrderValue > 0)
         _StatTile(
@@ -553,6 +628,13 @@ class _MoneyCards extends StatelessWidget {
       data.allTimeEstimatedProfit,
       data.personalEstimatedProfit,
     );
+    // Expenses aren't split business/personal - a single running total.
+    final thisMonthNetProfitAll = thisMonthProfit == null
+        ? null
+        : subtractMoney(thisMonthProfit, data.thisMonthExpenses);
+    final allTimeNetProfitAll = allTimeProfit == null
+        ? null
+        : subtractMoney(allTimeProfit, data.allTimeExpenses);
     final receivables =
         data.outstandingReceivables + data.personalOutstandingReceivables;
     // Personal batches rarely carry real sale revenue, so - same as the
@@ -627,6 +709,24 @@ class _MoneyCards extends StatelessWidget {
             ? 'Set a unit cost on a batch to see this'
             : 'Revenue minus cost, business + personal, this month',
       ),
+      if (data.thisMonthExpenses > 0)
+        _StatTile(
+          label: 'Expenses (this month)',
+          value: _currency.format(data.thisMonthExpenses),
+          description: 'Standalone business expenses this month',
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+        ),
+      _StatTile(
+        label: 'Net profit (this month)',
+        value: thisMonthNetProfitAll == null
+            ? '-'
+            : _currency.format(thisMonthNetProfitAll),
+        description: thisMonthNetProfitAll == null
+            ? 'Set a unit cost on a batch to see this'
+            : 'Est. profit minus expenses, this month',
+      ),
       _StatTile(
         label: 'All-time revenue',
         value: _currency.format(allTimeRevenue),
@@ -638,6 +738,24 @@ class _MoneyCards extends StatelessWidget {
         description: allTimeProfit == null
             ? 'Set a unit cost on a batch to see this'
             : 'Revenue minus cost, business + personal',
+      ),
+      if (data.allTimeExpenses > 0)
+        _StatTile(
+          label: 'Expenses (all time)',
+          value: _currency.format(data.allTimeExpenses),
+          description: 'All standalone business expenses ever recorded',
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+        ),
+      _StatTile(
+        label: 'Net profit (all time)',
+        value: allTimeNetProfitAll == null
+            ? '-'
+            : _currency.format(allTimeNetProfitAll),
+        description: allTimeNetProfitAll == null
+            ? 'Set a unit cost on a batch to see this'
+            : 'Est. profit minus expenses',
       ),
       if (data.averageOrderValue > 0)
         _StatTile(

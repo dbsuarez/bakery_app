@@ -6,6 +6,7 @@ import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../models/product.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../../utils/note_dialog.dart';
 import '../../utils/segment_label.dart';
 import '../widgets/product_avatar.dart';
@@ -61,7 +62,7 @@ class _PaymentLogScreenState extends State<PaymentLogScreen> {
             .toList()
           ..sort((a, b) => b.date.compareTo(a.date));
 
-    final total = payments.fold<double>(0, (sum, p) => sum + p.amount);
+    final total = sumMoney(payments.map((p) => p.amount));
 
     return Scaffold(
       appBar: AppBar(
