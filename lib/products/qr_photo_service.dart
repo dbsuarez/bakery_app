@@ -26,21 +26,24 @@ Future<List<QrPhotoFile>> listQrPhotos() async {
   final uid = client.auth.currentUser!.id;
   final objects = await client.storage.from(_bucket).list(path: uid);
   final slotPattern = RegExp(r'^qr_(\d+)\.');
-  final files = objects
-      .where((o) => o.name != '.emptyFolderPlaceholder')
-      .map((o) {
-        final match = slotPattern.firstMatch(o.name);
-        final slot = match == null ? 0 : int.tryParse(match.group(1)!) ?? 0;
-        final path = '$uid/${o.name}';
-        return QrPhotoFile(
-          slot: slot,
-          path: path,
-          publicUrl: cacheBust(client.storage.from(_bucket).getPublicUrl(path)),
-        );
-      })
-      .where((f) => f.slot > 0)
-      .toList()
-    ..sort((a, b) => a.slot.compareTo(b.slot));
+  final files =
+      objects
+          .where((o) => o.name != '.emptyFolderPlaceholder')
+          .map((o) {
+            final match = slotPattern.firstMatch(o.name);
+            final slot = match == null ? 0 : int.tryParse(match.group(1)!) ?? 0;
+            final path = '$uid/${o.name}';
+            return QrPhotoFile(
+              slot: slot,
+              path: path,
+              publicUrl: cacheBust(
+                client.storage.from(_bucket).getPublicUrl(path),
+              ),
+            );
+          })
+          .where((f) => f.slot > 0)
+          .toList()
+        ..sort((a, b) => a.slot.compareTo(b.slot));
   return files;
 }
 
@@ -50,16 +53,28 @@ Future<List<QrPhotoFile>> listQrPhotos() async {
 Future<String> uploadQrImage({required int slot, required XFile file}) async {
   final client = Supabase.instance.client;
   final uid = client.auth.currentUser!.id;
-  await deleteQrImage(slot);
+  final existing = await listQrPhotos();
   final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
   final path = '$uid/qr_$slot.$ext';
   final bytes = await file.readAsBytes();
 
-  await client.storage.from(_bucket).uploadBinary(
+  // Upload first so a bucket/network/policy failure never removes the QR code
+  // that was already working. Once this succeeds, remove only obsolete files
+  // for the same slot that used a different extension.
+  await client.storage
+      .from(_bucket)
+      .uploadBinary(
         path,
         Uint8List.fromList(bytes),
         fileOptions: const FileOptions(upsert: true),
       );
+  final obsolete = existing
+      .where((file) => file.slot == slot && file.path != path)
+      .map((file) => file.path)
+      .toList();
+  if (obsolete.isNotEmpty) {
+    await client.storage.from(_bucket).remove(obsolete);
+  }
 
   return cacheBust(client.storage.from(_bucket).getPublicUrl(path));
 }
@@ -67,8 +82,10 @@ Future<String> uploadQrImage({required int slot, required XFile file}) async {
 /// Permanently removes whatever is uploaded for [slot], if anything.
 Future<void> deleteQrImage(int slot) async {
   final existing = await listQrPhotos();
-  final paths =
-      existing.where((f) => f.slot == slot).map((f) => f.path).toList();
+  final paths = existing
+      .where((f) => f.slot == slot)
+      .map((f) => f.path)
+      .toList();
   if (paths.isNotEmpty) {
     await Supabase.instance.client.storage.from(_bucket).remove(paths);
   }

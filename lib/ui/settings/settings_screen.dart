@@ -9,6 +9,7 @@ import '../../backup/backup_service.dart' as backup;
 import '../../build_info.dart';
 import '../../repository/bakery_repository.dart';
 import '../../repository/remote_repository.dart';
+import '../../products/storage_image_optimizer.dart';
 import '../../reports/csv_report_service.dart' as reports;
 import '../../security/app_lock_service.dart';
 import '../../settings/business_settings_controller.dart';
@@ -29,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _exporting = false;
   bool _exportingReport = false;
+  bool _optimizingImages = false;
   Future<_LockState>? _lockStateFuture;
 
   @override
@@ -190,7 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.restore),
             title: const Text('Restore from Backup'),
-            subtitle: const Text('Load data and media from a ZIP backup'),
+            subtitle: const Text('Load a full ZIP or data-only JSON backup'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(
               context,
@@ -198,9 +200,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.backup_outlined),
-            title: const Text('Export Backup (ZIP + media)'),
+            title: const Text('Export Full Backup (ZIP + images)'),
             subtitle: const Text(
-              'Save a copy of all products, customers, batches, and sales',
+              'Database data, product photos, and payment QR images',
             ),
             trailing: _exporting
                 ? const SizedBox(
@@ -209,7 +211,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.chevron_right),
-            onTap: _exporting ? null : () => _exportBackup(context),
+            onTap: _exporting
+                ? null
+                : () => _exportBackup(context, includeImages: true),
+          ),
+          ListTile(
+            leading: const Icon(Icons.data_object_outlined),
+            title: const Text('Export Data Only (JSON)'),
+            subtitle: const Text('Small backup without product or QR images'),
+            trailing: _exporting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _exporting
+                ? null
+                : () => _exportBackup(context, includeImages: false),
+          ),
+          ListTile(
+            leading: const Icon(Icons.compress_outlined),
+            title: const Text('Optimize Existing Images'),
+            subtitle: const Text(
+              'Resize stored product photos and payment QR images',
+            ),
+            trailing: _optimizingImages
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _optimizingImages ? null : () => _optimizeImages(context),
           ),
           ListTile(
             leading: const Icon(Icons.receipt_long_outlined),
@@ -830,10 +864,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await business.setPaymentMethods(methods);
   }
 
-  Future<void> _exportBackup(BuildContext context) async {
+  Future<void> _exportBackup(
+    BuildContext context, {
+    required bool includeImages,
+  }) async {
     setState(() => _exporting = true);
     try {
-      await backup.exportBackup(context.read<AppState>());
+      final state = context.read<AppState>();
+      if (includeImages) {
+        await backup.exportBackup(state);
+      } else {
+        await backup.exportDataBackup(state);
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(
@@ -842,6 +884,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _optimizeImages(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Optimize existing images?'),
+        content: const Text(
+          'This replaces the original stored images with smaller copies. '
+          'Product photos are limited to 1600 px and payment QR images to '
+          '2000 px. File names and links stay the same.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Optimize'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _optimizingImages = true);
+    try {
+      final report = await optimizeStoredImages();
+      if (!context.mounted) return;
+      final savedMb = report.bytesSaved / (1024 * 1024);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Optimized ${report.optimized}, skipped ${report.skipped}, '
+            'failed ${report.failed}. Saved ${savedMb.toStringAsFixed(1)} MB.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Image optimization failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _optimizingImages = false);
     }
   }
 

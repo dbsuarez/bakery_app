@@ -326,7 +326,7 @@ class _PhotoGrid extends StatelessWidget {
         maxCrossAxisExtent: 120,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
-        childAspectRatio: 0.85,
+        childAspectRatio: 0.72,
       ),
       itemCount: files.length,
       itemBuilder: (context, index) {
@@ -417,20 +417,40 @@ class _PhotoGrid extends StatelessWidget {
                   ],
                 ),
               ),
-              if (label != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Column(
+                  children: [
+                    if (label != null)
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    Text(
+                      _formatFileSize(file.sizeBytes),
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
         );
       },
     );
   }
+}
+
+String _formatFileSize(int? bytes) {
+  if (bytes == null) return 'Size unavailable';
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(kb < 10 ? 1 : 0)} KB';
+  final mb = kb / 1024;
+  return '${mb.toStringAsFixed(mb < 10 ? 1 : 0)} MB';
 }

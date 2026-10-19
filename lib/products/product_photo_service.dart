@@ -97,10 +97,12 @@ class ProductPhotoFile {
   final String path;
   final String publicUrl;
   final DateTime? updatedAt;
+  final int? sizeBytes;
   const ProductPhotoFile({
     required this.path,
     required this.publicUrl,
     this.updatedAt,
+    this.sizeBytes,
   });
 }
 
@@ -117,6 +119,12 @@ Future<List<ProductPhotoFile>> listProductPhotos() async {
       path: path,
       publicUrl: client.storage.from(_bucket).getPublicUrl(path),
       updatedAt: o.updatedAt == null ? null : DateTime.tryParse(o.updatedAt!),
+      sizeBytes: switch (o.metadata?['size']) {
+        final int value => value,
+        final num value => value.toInt(),
+        final String value => int.tryParse(value),
+        _ => null,
+      },
     );
   }).toList();
 }

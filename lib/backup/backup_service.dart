@@ -99,8 +99,7 @@ Map<String, dynamic> buildBackupDocument({
   };
 }
 
-/// Shares the backup via the native share sheet on mobile; on web, triggers
-/// a plain browser download instead of the Web Share API's share dialog.
+/// Exports a complete ZIP containing database data and storage media.
 Future<void> exportBackup(AppState state) async {
   final json = buildBackupJson(state);
   final fileName =
@@ -153,6 +152,34 @@ Future<void> exportBackup(AppState state) async {
       fileNameOverrides: [fileName],
       subject: 'My Bakery backup',
       text: 'My Bakery data backup',
+    ),
+  );
+}
+
+/// Exports the same complete version 2 database snapshot without media. This
+/// is intentionally JSON so it stays small and remains directly compatible
+/// with the existing restore flow.
+Future<void> exportDataBackup(AppState state) async {
+  final bytes = Uint8List.fromList(utf8.encode(buildBackupJson(state)));
+  final fileName =
+      'bakery_data_backup_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.json';
+
+  if (kIsWeb) {
+    downloadBytes(bytes, fileName, 'application/json');
+    return;
+  }
+
+  final file = XFile.fromData(
+    bytes,
+    name: fileName,
+    mimeType: 'application/json',
+  );
+  await SharePlus.instance.share(
+    ShareParams(
+      files: [file],
+      fileNameOverrides: [fileName],
+      subject: 'My Bakery data backup',
+      text: 'My Bakery data-only backup (no images)',
     ),
   );
 }
