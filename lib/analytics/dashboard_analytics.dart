@@ -13,6 +13,17 @@ class CustomerStat {
   const CustomerStat(this.customer, this.value);
 }
 
+class CustomerMonthWinner {
+  final DateTime monthStart;
+  final Customer customer;
+  final double amount;
+  const CustomerMonthWinner({
+    required this.monthStart,
+    required this.customer,
+    required this.amount,
+  });
+}
+
 class ProductStat {
   final Product product;
   final double value;
@@ -68,7 +79,8 @@ class DashboardData {
   final List<CustomerStat> topSpenders;
   final List<CustomerStat> topUnpaidBalances;
   final Customer? customerOfTheMonth;
-  final List<Customer> atRisk;
+  final Customer? customerOfAllTime;
+  final List<CustomerMonthWinner> monthlyCustomerWinners;
 
   // Product cards
   final List<ProductStat> bestSellerByUnits;
@@ -138,7 +150,8 @@ class DashboardData {
     required this.topSpenders,
     required this.topUnpaidBalances,
     required this.customerOfTheMonth,
-    required this.atRisk,
+    required this.customerOfAllTime,
+    required this.monthlyCustomerWinners,
     required this.bestSellerByUnits,
     required this.bestSellerByRevenue,
     required this.bestProfitPerPiece,
@@ -362,12 +375,19 @@ DashboardData computeDashboard({
               .round(),
         );
 
+  // Customer rankings must reconcile with the customer ledger. Unlike the
+  // bakery profit/remittance figures, the ledger also includes real customer
+  // sales made from personal batches.
+  final customerLedgerSales = liveSales
+      .where((s) => s.saleType == SaleType.customerSale)
+      .toList();
+
   final loyalStats =
       liveCustomers
           .map(
             (c) => CustomerStat(
               c,
-              customerOrderCount(c.id, businessSales).toDouble(),
+              customerOrderCount(c.id, customerLedgerSales).toDouble(),
             ),
           )
           .where((s) => s.value > 0)
@@ -376,7 +396,10 @@ DashboardData computeDashboard({
 
   final spenderStats =
       liveCustomers
-          .map((c) => CustomerStat(c, customerTotalSpent(c.id, businessSales)))
+          .map(
+            (c) =>
+                CustomerStat(c, customerTotalSpent(c.id, customerLedgerSales)),
+          )
           .where((s) => s.value > 0)
           .toList()
         ..sort((a, b) => b.value.compareTo(a.value));
@@ -386,18 +409,61 @@ DashboardData computeDashboard({
           .map(
             (c) => CustomerStat(
               c,
-              customerBalance(c.id, businessSales, salePayments),
+              customerBalance(c.id, customerLedgerSales, salePayments),
             ),
           )
           .where((s) => s.value > 0)
           .toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-  final customerOfTheMonth = spenderStats.isNotEmpty
+  final customerOfAllTime = spenderStats.isNotEmpty
       ? spenderStats.first.customer
       : null;
-
-  final atRisk = atRiskCustomers(liveCustomers, businessSales, now: today);
+  final customerById = {
+    for (final customer in liveCustomers) customer.id: customer,
+  };
+  final monthlyCustomerCentavos = <int, Map<int, int>>{};
+  for (final sale in customerLedgerSales) {
+    final monthKey = sale.saleDate.year * 100 + sale.saleDate.month;
+    final totals = monthlyCustomerCentavos.putIfAbsent(monthKey, () => {});
+    totals.update(
+      sale.customerId,
+      (value) => value + toCentavos(sale.amount),
+      ifAbsent: () => toCentavos(sale.amount),
+    );
+  }
+  final monthlyCustomerWinners = <CustomerMonthWinner>[];
+  for (final monthEntry in monthlyCustomerCentavos.entries) {
+    final eligible =
+        monthEntry.value.entries
+            .where((entry) => customerById.containsKey(entry.key))
+            .toList()
+          ..sort((a, b) {
+            final amountCompare = b.value.compareTo(a.value);
+            if (amountCompare != 0) return amountCompare;
+            return customerById[a.key]!.name.toLowerCase().compareTo(
+              customerById[b.key]!.name.toLowerCase(),
+            );
+          });
+    if (eligible.isEmpty) continue;
+    final winner = eligible.first;
+    monthlyCustomerWinners.add(
+      CustomerMonthWinner(
+        monthStart: DateTime(monthEntry.key ~/ 100, monthEntry.key % 100),
+        customer: customerById[winner.key]!,
+        amount: fromCentavos(winner.value),
+      ),
+    );
+  }
+  monthlyCustomerWinners.sort((a, b) => b.monthStart.compareTo(a.monthStart));
+  Customer? customerOfTheMonth;
+  for (final winner in monthlyCustomerWinners) {
+    if (winner.monthStart.year == today.year &&
+        winner.monthStart.month == today.month) {
+      customerOfTheMonth = winner.customer;
+      break;
+    }
+  }
 
   double unitsForProduct(int productId) {
     final batchIds = liveBatches
@@ -550,19 +616,23 @@ DashboardData computeDashboard({
       .where((s) => personalBatchIdSet.contains(s.batchId))
       .fold<int>(0, (sum, s) => sum + s.quantity);
   final personalOutstandingReceivables = sumMoney(
-    liveSales.where(
-        (s) =>
-            personalBatchIdSet.contains(s.batchId) &&
-            !s.paid &&
-            s.saleType == SaleType.customerSale,
-      ).map((s) => saleRemainingAmount(s, salePayments)),
+    liveSales
+        .where(
+          (s) =>
+              personalBatchIdSet.contains(s.batchId) &&
+              !s.paid &&
+              s.saleType == SaleType.customerSale,
+        )
+        .map((s) => saleRemainingAmount(s, salePayments)),
   );
   final personalRevenue = sumMoney(
-    liveSales.where(
-        (s) =>
-            personalBatchIdSet.contains(s.batchId) &&
-            s.saleType == SaleType.customerSale,
-      ).map((s) => s.amount),
+    liveSales
+        .where(
+          (s) =>
+              personalBatchIdSet.contains(s.batchId) &&
+              s.saleType == SaleType.customerSale,
+        )
+        .map((s) => s.amount),
   );
   final personalMonthBatches = personalBatches.where(
     (b) => !b.batchDate.isBefore(monthStart),
@@ -587,10 +657,13 @@ DashboardData computeDashboard({
   double revenueInMonth(DateTime monthStart) {
     final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
     return sumMoney(
-      businessSales.where(
-          (s) =>
-              !s.saleDate.isBefore(monthStart) && s.saleDate.isBefore(monthEnd),
-        ).map((s) => s.amount),
+      businessSales
+          .where(
+            (s) =>
+                !s.saleDate.isBefore(monthStart) &&
+                s.saleDate.isBefore(monthEnd),
+          )
+          .map((s) => s.amount),
     );
   }
 
@@ -603,32 +676,39 @@ DashboardData computeDashboard({
   // Personal trend uses batch production date/value, not sales revenue -
   // personal batches normally carry no real sale amount to trend on.
   double personalValueOnDay(DateTime day) => sumMoney(
-    personalBatches.where(
-        (b) =>
-            b.batchDate.year == day.year &&
-            b.batchDate.month == day.month &&
-            b.batchDate.day == day.day,
-      ).map((b) => b.totalValue),
+    personalBatches
+        .where(
+          (b) =>
+              b.batchDate.year == day.year &&
+              b.batchDate.month == day.month &&
+              b.batchDate.day == day.day,
+        )
+        .map((b) => b.totalValue),
   );
 
   double personalValueInWeek(DateTime weekStart) {
     final weekEnd = weekStart.add(const Duration(days: 7));
     return sumMoney(
-      personalBatches.where(
-          (b) =>
-              !b.batchDate.isBefore(weekStart) && b.batchDate.isBefore(weekEnd),
-        ).map((b) => b.totalValue),
+      personalBatches
+          .where(
+            (b) =>
+                !b.batchDate.isBefore(weekStart) &&
+                b.batchDate.isBefore(weekEnd),
+          )
+          .map((b) => b.totalValue),
     );
   }
 
   double personalValueInMonth(DateTime monthStart) {
     final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 1);
     return sumMoney(
-      personalBatches.where(
-          (b) =>
-              !b.batchDate.isBefore(monthStart) &&
-              b.batchDate.isBefore(monthEnd),
-        ).map((b) => b.totalValue),
+      personalBatches
+          .where(
+            (b) =>
+                !b.batchDate.isBefore(monthStart) &&
+                b.batchDate.isBefore(monthEnd),
+          )
+          .map((b) => b.totalValue),
     );
   }
 
@@ -673,7 +753,8 @@ DashboardData computeDashboard({
     topSpenders: spenderStats.take(5).toList(),
     topUnpaidBalances: unpaidStats.take(5).toList(),
     customerOfTheMonth: customerOfTheMonth,
-    atRisk: atRisk,
+    customerOfAllTime: customerOfAllTime,
+    monthlyCustomerWinners: monthlyCustomerWinners,
     bestSellerByUnits: bestSellerByUnits.take(5).toList(),
     bestSellerByRevenue: bestSellerByRevenue.take(5).toList(),
     bestProfitPerPiece: bestProfitPerPiece.take(5).toList(),

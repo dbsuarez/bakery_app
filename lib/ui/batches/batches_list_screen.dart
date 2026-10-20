@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../analytics/batch_calculations.dart';
 import '../../app_state.dart';
 import '../../models/batch.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/money.dart';
 import '../widgets/product_avatar.dart';
 import 'batch_form_screen.dart';
 import 'swipeable_batch_detail_screen.dart';
 import 'unpaid_report_screen.dart';
 
 enum BatchFilter { all, awaiting, remitted, personal }
+
+final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
 class BatchesListScreen extends StatefulWidget {
   final String initialSearch;
@@ -78,6 +82,9 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
         final bTitle = appState.productById(b.productId)?.title ?? '';
         return aTitle.toLowerCase().compareTo(bTitle.toLowerCase());
       });
+    final remittanceTotal = sumMoney(
+      batches.map((batch) => batchRevenue(batch.id, appState.sales)),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -155,11 +162,41 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
               ],
             ),
           ),
+          if (_filter == BatchFilter.awaiting ||
+              _filter == BatchFilter.remitted)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _filter == BatchFilter.awaiting
+                        ? 'Total to remit'
+                        : 'Remitted total',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  Text(
+                    _currency.format(remittanceTotal),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: batches.isEmpty
-                ? const Center(child: Text('No batches here.'))
-                : ListView.builder(
+                ? _EmptyBatches(filter: _filter)
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 88),
                     itemCount: batches.length,
+                    separatorBuilder: (_, _) => const Divider(indent: 72),
                     itemBuilder: (context, index) {
                       final batch = batches[index];
                       final product = appState.productById(batch.productId);
@@ -237,6 +274,42 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyBatches extends StatelessWidget {
+  final BatchFilter filter;
+  const _EmptyBatches({required this.filter});
+
+  @override
+  Widget build(BuildContext context) {
+    final message = switch (filter) {
+      BatchFilter.awaiting => 'No batches awaiting remittance',
+      BatchFilter.remitted => 'No remitted batches',
+      BatchFilter.personal => 'No personal batches',
+      BatchFilter.all => 'No batches yet',
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 48,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 12),
+            Text(message, style: Theme.of(context).textTheme.titleMedium),
+            if (filter == BatchFilter.all) ...[
+              const SizedBox(height: 6),
+              const Text('Tap + to add your first batch.'),
+            ],
+          ],
+        ),
       ),
     );
   }

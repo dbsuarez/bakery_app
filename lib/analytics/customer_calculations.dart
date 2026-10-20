@@ -8,17 +8,19 @@ import '../utils/money.dart';
 
 /// Sum of a sale's non-deleted installment payments.
 double salePaidAmount(int saleId, List<SalePayment> payments) {
-  return sumMoney(payments
-      .where((p) => p.saleId == saleId && !p.isDeleted)
-      .map((p) => p.amount));
+  return sumMoney(
+    payments
+        .where((p) => p.saleId == saleId && !p.isDeleted)
+        .map((p) => p.amount),
+  );
 }
 
 /// How much of [sale] is still owed after any partial payments -
 /// [sale.amount] itself never changes; partial payments just chip away at
 /// what's outstanding until it flips to `paid`. Never negative.
 double saleRemainingAmount(Sale sale, List<SalePayment> payments) {
-  final remaining = toCentavos(sale.amount) -
-      toCentavos(salePaidAmount(sale.id, payments));
+  final remaining =
+      toCentavos(sale.amount) - toCentavos(salePaidAmount(sale.id, payments));
   return remaining < 0 ? 0 : fromCentavos(remaining);
 }
 
@@ -30,13 +32,17 @@ double customerBalance(
   List<Sale> sales, [
   List<SalePayment> payments = const [],
 ]) {
-  return sumMoney(sales
-      .where((s) =>
-          s.customerId == customerId &&
-          !s.isDeleted &&
-          !s.paid &&
-          s.saleType == SaleType.customerSale)
-      .map((s) => saleRemainingAmount(s, payments)));
+  return sumMoney(
+    sales
+        .where(
+          (s) =>
+              s.customerId == customerId &&
+              !s.isDeleted &&
+              !s.paid &&
+              s.saleType == SaleType.customerSale,
+        )
+        .map((s) => saleRemainingAmount(s, payments)),
+  );
 }
 
 /// A customer's running credit balance - positive means the bakery owes
@@ -44,53 +50,35 @@ double customerBalance(
 /// would mean they owe a touch more (rare - a price increase after they'd
 /// paid). See [CustomerCredit] for how entries are created.
 double customerCreditBalance(int customerId, List<CustomerCredit> credits) {
-  return sumMoney(credits
-      .where((c) => c.customerId == customerId && !c.isDeleted)
-      .map((c) => c.amount));
+  return sumMoney(
+    credits
+        .where((c) => c.customerId == customerId && !c.isDeleted)
+        .map((c) => c.amount),
+  );
 }
 
 int customerOrderCount(int customerId, List<Sale> sales) {
   return sales
-      .where((s) =>
-          s.customerId == customerId &&
-          !s.isDeleted &&
-          s.saleType == SaleType.customerSale)
+      .where(
+        (s) =>
+            s.customerId == customerId &&
+            !s.isDeleted &&
+            s.saleType == SaleType.customerSale,
+      )
       .length;
 }
 
 double customerTotalSpent(int customerId, List<Sale> sales) {
-  return sumMoney(sales
-      .where((s) =>
-          s.customerId == customerId &&
-          !s.isDeleted &&
-          s.saleType == SaleType.customerSale)
-      .map((s) => s.amount));
-}
-
-DateTime? customerLastOrderDate(int customerId, List<Sale> sales) {
-  final orders = sales.where((s) =>
-      s.customerId == customerId &&
-      !s.isDeleted &&
-      s.saleType == SaleType.customerSale);
-  if (orders.isEmpty) return null;
-  return orders.map((s) => s.saleDate).reduce((a, b) => a.isAfter(b) ? a : b);
-}
-
-/// Customers with no order in 30+ days (spec section 10).
-List<Customer> atRiskCustomers(
-  List<Customer> customers,
-  List<Sale> sales, {
-  DateTime? now,
-  int thresholdDays = 30,
-}) {
-  final today = now ?? DateTime.now();
-  return customers
-      .where((c) => !c.isArchived && !c.isPseudoCustomer)
-      .where((c) {
-    final last = customerLastOrderDate(c.id, sales);
-    if (last == null) return false;
-    return today.difference(last).inDays >= thresholdDays;
-  }).toList();
+  return sumMoney(
+    sales
+        .where(
+          (s) =>
+              s.customerId == customerId &&
+              !s.isDeleted &&
+              s.saleType == SaleType.customerSale,
+        )
+        .map((s) => s.amount),
+  );
 }
 
 /// Normal (non-pseudo, non-archived) customers, for loyalty/spending
@@ -136,18 +124,21 @@ int customerPointsEarned(
 }) {
   final batchById = {for (final b in batches) b.id: b};
   final productById = {for (final p in products) p.id: p};
-  final paidSales = sales.where((s) =>
-      s.customerId == customerId &&
-      !s.isDeleted &&
-      s.paid &&
-      s.saleType == SaleType.customerSale &&
-      s.datePaid != null &&
-      _inLoyaltyCategory(s, category, batchById, productById));
+  final paidSales = sales.where(
+    (s) =>
+        s.customerId == customerId &&
+        !s.isDeleted &&
+        s.paid &&
+        s.saleType == SaleType.customerSale &&
+        s.datePaid != null &&
+        _inLoyaltyCategory(s, category, batchById, productById),
+  );
 
   var total = 0.0;
   for (final s in paidSales) {
     var points = s.amount / pesosPerPoint;
-    final sameDay = s.datePaid!.year == s.saleDate.year &&
+    final sameDay =
+        s.datePaid!.year == s.saleDate.year &&
         s.datePaid!.month == s.saleDate.month &&
         s.datePaid!.day == s.saleDate.day;
     final eligibleForBonus = !s.saleDate.isBefore(sameDayBonusStartDate);
@@ -171,11 +162,13 @@ int customerPointsSpent(
 }) {
   final batchById = {for (final b in batches) b.id: b};
   final productById = {for (final p in products) p.id: p};
-  final redemptions = sales.where((s) =>
-      s.customerId == customerId &&
-      !s.isDeleted &&
-      s.saleType == SaleType.pointsRedemption &&
-      _inLoyaltyCategory(s, category, batchById, productById));
+  final redemptions = sales.where(
+    (s) =>
+        s.customerId == customerId &&
+        !s.isDeleted &&
+        s.saleType == SaleType.pointsRedemption &&
+        _inLoyaltyCategory(s, category, batchById, productById),
+  );
 
   var total = 0.0;
   for (final s in redemptions) {
@@ -193,10 +186,12 @@ int customerPointsAdjustment(
   required ProductCategory category,
 }) {
   return adjustments
-      .where((a) =>
-          a.customerId == customerId &&
-          !a.isDeleted &&
-          a.category == category)
+      .where(
+        (a) =>
+            a.customerId == customerId &&
+            !a.isDeleted &&
+            a.category == category,
+      )
       .fold(0, (sum, a) => sum + a.points);
 }
 
@@ -230,14 +225,20 @@ int customerPointsBalance(
     category: category,
     redeemPesosPerPoint: redeemPesosPerPoint,
   );
-  final adjustment =
-      customerPointsAdjustment(customerId, adjustments, category: category);
+  final adjustment = customerPointsAdjustment(
+    customerId,
+    adjustments,
+    category: category,
+  );
   return earned - spent + adjustment;
 }
 
 /// Points cost to redeem [quantity] units of a batch at its unit price,
 /// converted at the redemption rate (not the earn rate).
-int pointsCostForBatch(Batch batch, int quantity,
-    {required double redeemPesosPerPoint}) {
+int pointsCostForBatch(
+  Batch batch,
+  int quantity, {
+  required double redeemPesosPerPoint,
+}) {
   return (quantity * batch.unitPrice / redeemPesosPerPoint).ceil();
 }

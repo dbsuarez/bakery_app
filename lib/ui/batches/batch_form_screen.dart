@@ -11,6 +11,7 @@ import '../widgets/product_avatar.dart';
 
 class BatchFormScreen extends StatefulWidget {
   final int? batchId;
+
   /// Pre-fills a new batch's fields (product, price, cost, personal flag)
   /// from an existing one - used by "Duplicate batch". Ignored if [batchId]
   /// is set (editing always loads from that batch instead).
@@ -116,128 +117,131 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
         }
       },
       child: Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit Batch' : 'Add Batch')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            DropdownButtonFormField<int>(
-              initialValue: _productId,
-              decoration: const InputDecoration(labelText: 'Product'),
-              items: [
-                // Archived products stay hidden from new batch creation, but
-                // an already-selected one (editing an old batch) still shows.
-                for (final p in appState.products
-                    .where((p) => !p.isArchived || p.id == _productId))
-                  DropdownMenuItem(
-                    value: p.id,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ProductAvatar(imageUrl: p.imageUrl, radius: 12),
-                        const SizedBox(width: 8),
-                        Text(p.title),
-                      ],
+        appBar: AppBar(title: Text(_isEdit ? 'Edit Batch' : 'Add Batch')),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              DropdownButtonFormField<int>(
+                initialValue: _productId,
+                decoration: const InputDecoration(labelText: 'Product'),
+                items: [
+                  // Archived products stay hidden from new batch creation, but
+                  // an already-selected one (editing an old batch) still shows.
+                  for (final p in appState.products.where(
+                    (p) => !p.isArchived || p.id == _productId,
+                  ))
+                    DropdownMenuItem(
+                      value: p.id,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ProductAvatar(imageUrl: p.imageUrl, radius: 12),
+                          const SizedBox(width: 8),
+                          Text(p.title),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-              onChanged: (v) => setState(() {
-                _productId = v;
-                _dirty = true;
-              }),
-              validator: (v) => v == null ? 'Select a product' : null,
-            ),
-            TextButton.icon(
-              onPressed: () => _showAddProductDialog(context),
-              icon: const Icon(Icons.add),
-              label: const Text('New product'),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Batch date'),
-              subtitle: Text(
-                appDateFormat.format(_batchDate),
+                ],
+                onChanged: (v) => setState(() {
+                  _productId = v;
+                  _dirty = true;
+                }),
+                validator: (v) => v == null ? 'Select a product' : null,
               ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _batchDate,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) {
-                  setState(() {
-                    _batchDate = picked;
-                    _dirty = true;
-                  });
-                }
-              },
-            ),
-            TextFormField(
-              controller: _countController,
-              decoration: const InputDecoration(labelText: 'Count produced'),
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = int.tryParse(v ?? '');
-                if (n == null || n <= 0) return 'Enter a positive integer';
-                return null;
-              },
-            ),
-            TextFormField(
-              controller: _priceController,
-              decoration: const InputDecoration(labelText: 'Unit price'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                final n = double.tryParse(v ?? '');
-                if (n == null || n < 0) return 'Enter a valid price';
-                return null;
-              },
-            ),
-            TextFormField(
-              controller: _costController,
-              decoration: const InputDecoration(
-                labelText: 'Unit cost (optional, for profit tracking)',
+              TextButton.icon(
+                onPressed: () => _showAddProductDialog(context),
+                icon: const Icon(Icons.add),
+                label: const Text('New product'),
               ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                if (v == null || v.isEmpty) return null;
-                final n = double.tryParse(v);
-                if (n == null || n < 0) return 'Enter a valid cost';
-                return null;
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Personal batch'),
-              subtitle: const Text(
-                'For your own use - skips remittance entirely.',
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Batch date'),
+                subtitle: Text(appDateFormat.format(_batchDate)),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _batchDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) {
+                    setState(() {
+                      _batchDate = picked;
+                      _dirty = true;
+                    });
+                  }
+                },
               ),
-              value: _isPersonal,
-              onChanged: (v) => setState(() {
-                _isPersonal = v;
-                _dirty = true;
-              }),
-            ),
-            const SizedBox(height: 16),
-            ValueListenableBuilder(
-              valueListenable: _countController,
-              builder: (context, _, _) => _TotalPreview(
-                countController: _countController,
-                priceController: _priceController,
+              TextFormField(
+                controller: _countController,
+                decoration: const InputDecoration(labelText: 'Count produced'),
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final n = int.tryParse(v ?? '');
+                  if (n == null || n <= 0) return 'Enter a positive integer';
+                  return null;
+                },
               ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => _save(context),
-              child: Text(_isEdit ? 'Save Changes' : 'Create Batch'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _priceController,
+                decoration: const InputDecoration(labelText: 'Unit price'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (v) {
+                  final n = double.tryParse(v ?? '');
+                  if (n == null || n < 0) return 'Enter a valid price';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _costController,
+                decoration: const InputDecoration(
+                  labelText: 'Unit cost (optional, for profit tracking)',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return null;
+                  final n = double.tryParse(v);
+                  if (n == null || n < 0) return 'Enter a valid cost';
+                  return null;
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Personal batch'),
+                subtitle: const Text(
+                  'For your own use - skips remittance entirely.',
+                ),
+                value: _isPersonal,
+                onChanged: (v) => setState(() {
+                  _isPersonal = v;
+                  _dirty = true;
+                }),
+              ),
+              const SizedBox(height: 16),
+              ValueListenableBuilder(
+                valueListenable: _countController,
+                builder: (context, _, _) => _TotalPreview(
+                  countController: _countController,
+                  priceController: _priceController,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => _save(context),
+                child: Text(_isEdit ? 'Save Changes' : 'Create Batch'),
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -262,10 +266,13 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
               SegmentedButton<ProductCategory>(
                 segments: const [
                   ButtonSegment(
-                      value: ProductCategory.bakery, label: Text('Bakery')),
+                    value: ProductCategory.bakery,
+                    label: Text('Bakery'),
+                  ),
                   ButtonSegment(
-                      value: ProductCategory.merchandise,
-                      label: Text('Merchandise')),
+                    value: ProductCategory.merchandise,
+                    label: Text('Merchandise'),
+                  ),
                 ],
                 selected: {category},
                 onSelectionChanged: (s) =>
@@ -290,20 +297,24 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
     if (result != true || title.isEmpty || !context.mounted) return;
     final repo = context.read<BakeryRepository>();
     await runGuarded(
-        context,
-        () => repo.createProduct(Product(
-              id: 0,
-              title: title,
-              category: category,
-              updatedAt: DateTime.now(),
-            )));
+      context,
+      () => repo.createProduct(
+        Product(
+          id: 0,
+          title: title,
+          category: category,
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
   }
 
   Future<void> _save(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     final repo = context.read<BakeryRepository>();
-    final originalUnitPrice =
-        _isEdit ? context.read<AppState>().batchById(widget.batchId!)?.unitPrice : null;
+    final originalUnitPrice = _isEdit
+        ? context.read<AppState>().batchById(widget.batchId!)?.unitPrice
+        : null;
     final batch = Batch(
       id: widget.batchId ?? 0,
       productId: _productId!,
@@ -326,7 +337,13 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
           originalUnitPrice != null &&
           originalUnitPrice != batch.unitPrice &&
           context.mounted) {
-        await _offerReprice(context, repo, batch.id, originalUnitPrice, batch.unitPrice);
+        await _offerReprice(
+          context,
+          repo,
+          batch.id,
+          originalUnitPrice,
+          batch.unitPrice,
+        );
       }
       if (!context.mounted) return;
       // Heads-up (spec: favorites): a fresh batch of a product someone has
@@ -356,8 +373,9 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
       if (context.mounted) Navigator.of(context).pop();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -398,14 +416,17 @@ class _BatchFormScreenState extends State<BatchFormScreen> {
     try {
       await repo.reconcileBatchUnitPrice(batchId, oldPrice, newPrice);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Transactions updated to the new price.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Transactions updated to the new price.'),
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not update transactions: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update transactions: $e')),
+        );
       }
     }
   }

@@ -70,6 +70,15 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
         : remainingQuantity(batch, appState.sales);
 
     final business = context.watch<BusinessSettingsController>();
+    final recentSales = appState.sales.where((s) => !s.isDeleted).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final recentCustomerIds = <int>[];
+    for (final sale in recentSales) {
+      if (!recentCustomerIds.contains(sale.customerId)) {
+        recentCustomerIds.add(sale.customerId);
+      }
+      if (recentCustomerIds.length == 5) break;
+    }
     final redemptionCategory = (isRedemption && batch != null)
         ? appState.productById(batch.productId)?.category
         : null;
@@ -140,6 +149,35 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (recentSales.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: () => _repeatSale(appState, recentSales.first),
+                  icon: const Icon(Icons.replay),
+                  label: const Text('Repeat last transaction'),
+                ),
+              ),
+            if (recentCustomerIds.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Recent customers',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final id in recentCustomerIds)
+                    if (appState.customerById(id) case final customer?)
+                      ActionChip(
+                        label: Text(customer.name),
+                        onPressed: () => setState(() => _customerId = id),
+                      ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             DropdownButtonFormField<int>(
               initialValue: _batchId,
               decoration: const InputDecoration(labelText: 'Batch'),
@@ -187,6 +225,7 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                   style: TextStyle(color: Colors.amber.shade800),
                 ),
               ),
+            const SizedBox(height: 8),
             Autocomplete<Customer>(
               displayStringForOption: (c) => c.name,
               initialValue: TextEditingValue(
@@ -243,6 +282,7 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                   );
                 },
               ),
+            const SizedBox(height: 8),
             DropdownButtonFormField<SaleType>(
               initialValue: _saleType,
               decoration: const InputDecoration(labelText: 'Sale type'),
@@ -323,6 +363,7 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                   return null;
                 },
               ),
+            if (_saleType == SaleType.customerSale) const SizedBox(height: 8),
             if (_saleType == SaleType.customerSale)
               SwitchListTile(
                 title: const Text('Reservation'),
@@ -386,6 +427,8 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
                 ],
                 onChanged: (v) => setState(() => _paymentMethod = v),
               ),
+            if (!isRedemption && _paid && business.paymentMethods.isNotEmpty)
+              const SizedBox(height: 8),
             TextFormField(
               controller: _notesController,
               decoration: const InputDecoration(labelText: 'Notes (optional)'),
@@ -399,6 +442,31 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
         ),
       ),
     );
+  }
+
+  void _repeatSale(AppState state, Sale sale) {
+    final batch = state.batchById(sale.batchId);
+    if (batch == null || remainingQuantity(batch, state.sales) <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The last transaction\'s batch has no stock left.'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _batchId = sale.batchId;
+      _customerId = sale.customerId;
+      _quantity = sale.quantity.clamp(1, remainingQuantity(batch, state.sales));
+      _saleType = sale.saleType;
+      _discountController.text = sale.discount.toStringAsFixed(2);
+      _amountEdited = false;
+      _paid = false;
+      _datePaid = null;
+      _paymentMethod = sale.paymentMethod;
+      _isReservation = sale.isReservation;
+      _notesController.text = sale.notes ?? '';
+    });
   }
 
   void _setQuantity(int qty, int? max) {

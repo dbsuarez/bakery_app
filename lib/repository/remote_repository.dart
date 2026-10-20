@@ -84,6 +84,7 @@ class RemoteRepository implements BakeryRepository {
   /// returned (row count + when), so an unexpected "0 rows" (RLS/auth
   /// mismatch) is distinguishable from "poll never ran at all".
   final ValueNotifier<Map<String, String>> lastFetchInfo = ValueNotifier({});
+  final ValueNotifier<bool> isFetching = ValueNotifier(false);
 
   final _productIds = _IdMapper();
   final _customerIds = _IdMapper();
@@ -308,6 +309,7 @@ class RemoteRepository implements BakeryRepository {
     while (true) {
       final observedVersion = _refreshVersion;
       try {
+        isFetching.value = true;
         final response = await client
             .rpc('get_app_snapshot')
             .timeout(const Duration(seconds: 15));
@@ -330,6 +332,8 @@ class RemoteRepository implements BakeryRepository {
         // Keep the stream alive on a transient failure; the UI just keeps
         // showing the last successfully-fetched values.
         lastFetchError.value = 'snapshot: $e';
+      } finally {
+        isFetching.value = false;
       }
       // Refresh promptly after a successful mutation or app resume. The
       // timeout is the low-frequency fallback for changes made elsewhere.

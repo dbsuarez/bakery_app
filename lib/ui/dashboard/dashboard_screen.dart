@@ -12,7 +12,6 @@ import '../../celebration/celebration_controller.dart';
 import '../../models/batch.dart';
 import '../../models/customer.dart';
 import '../../repository/bakery_repository.dart';
-import '../../theme/theme_controller.dart';
 import '../../utils/app_date_format.dart';
 import '../../utils/guarded_action.dart';
 import '../../utils/money.dart';
@@ -23,10 +22,11 @@ import '../batches/batch_form_screen.dart';
 import '../batches/batches_list_screen.dart';
 import '../customers/customer_ledger_screen.dart';
 import '../expenses/expenses_screen.dart';
-import '../remittance/remittance_screen.dart';
 import '../single_sale/single_sale_screen.dart';
 import '../widgets/product_avatar.dart';
 import 'personal_activity_screen.dart';
+import 'end_of_day_screen.dart';
+import 'recent_activity_screen.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
@@ -213,41 +213,142 @@ class _Section {
 class _QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        FilledButton.icon(
-          onPressed: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const BatchFormScreen())),
-          icon: const Icon(Icons.add),
-          label: const Text('Add Batch'),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const BatchAddTransactionsScreen(),
+    final actions = [
+      _HomeAction(
+        label: 'New sale',
+        icon: Icons.point_of_sale_outlined,
+        prominent: true,
+        onTap: () => _open(context, const SingleSaleScreen()),
+      ),
+      _HomeAction(
+        label: 'Batch sales',
+        icon: Icons.groups_outlined,
+        prominent: true,
+        onTap: () => _open(context, const BatchAddTransactionsScreen()),
+      ),
+      _HomeAction(
+        label: 'Add batch',
+        icon: Icons.add_box_outlined,
+        onTap: () => _open(context, const BatchFormScreen()),
+      ),
+      _HomeAction(
+        label: 'Expense',
+        icon: Icons.receipt_long_outlined,
+        onTap: () => _open(context, const ExpensesScreen()),
+      ),
+      _HomeAction(
+        label: 'Activity',
+        icon: Icons.history,
+        onTap: () => _open(context, const RecentActivityScreen()),
+      ),
+      _HomeAction(
+        label: 'Daily summary',
+        icon: Icons.calendar_month_outlined,
+        onTap: () => _open(context, const EndOfDayScreen()),
+      ),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                'Quick actions',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= 760 ? 6 : 3;
+                const gap = 8.0;
+                final width =
+                    (constraints.maxWidth - gap * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (final action in actions)
+                      SizedBox(
+                        width: width,
+                        height: 82,
+                        child: _HomeActionTile(action: action),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _open(BuildContext context, Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+}
+
+class _HomeAction {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool prominent;
+
+  const _HomeAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.prominent = false,
+  });
+}
+
+class _HomeActionTile extends StatelessWidget {
+  final _HomeAction action;
+  const _HomeActionTile({required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final background = action.prominent
+        ? colors.primaryContainer
+        : colors.surfaceContainerHighest;
+    final foreground = action.prominent
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: action.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(action.icon, color: foreground, size: 24),
+              const SizedBox(height: 6),
+              Text(
+                action.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: foreground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-          icon: const Icon(Icons.groups),
-          label: const Text('Batch Add Transactions'),
         ),
-        OutlinedButton.icon(
-          onPressed: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const SingleSaleScreen())),
-          icon: const Icon(Icons.point_of_sale),
-          label: const Text('Log Single Transaction'),
-        ),
-        OutlinedButton.icon(
-          onPressed: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
-          icon: const Icon(Icons.receipt_long),
-          label: const Text('Expenses'),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -356,9 +457,6 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showDescription = context
-        .watch<ThemeController>()
-        .showCardDescriptions;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -369,22 +467,37 @@ class _StatTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  if (description != null) ...[
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: description!,
+                      triggerMode: TooltipTriggerMode.tap,
+                      showDuration: const Duration(seconds: 5),
+                      preferBelow: false,
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 17,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
               const SizedBox(height: 4),
               Text(
                 value,
                 textAlign: TextAlign.right,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              if (description != null && showDescription) ...[
-                const SizedBox(height: 4),
-                Text(
-                  description!,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -443,9 +556,7 @@ class _MoneyCards extends StatelessWidget {
         label: 'Pending remittance',
         value: _currency.format(data.pendingRemittance),
         description: 'Revenue from batches not yet remitted',
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const RemittanceScreen())),
+        onTap: () => goToBatches(BatchFilter.awaiting),
       ),
       _StatTile(
         label: 'This week revenue',
@@ -679,9 +790,7 @@ class _MoneyCards extends StatelessWidget {
         label: 'Pending remittance',
         value: _currency.format(data.pendingRemittance),
         description: 'Revenue from batches not yet remitted',
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const RemittanceScreen())),
+        onTap: () => goToBatches(BatchFilter.awaiting),
       ),
       _StatTile(
         label: 'This week revenue',
@@ -836,18 +945,46 @@ class _MoneyCards extends StatelessWidget {
           builder: (context, constraints) {
             final width = constraints.maxWidth;
             final columns = width >= 900 ? 4 : (width >= 320 ? 2 : 1);
-            const spacing = 8.0;
-            final tileWidth = (width - spacing * (columns - 1)) / columns;
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                for (final tile in tiles)
-                  SizedBox(width: tileWidth, child: tile),
-              ],
-            );
+            return _EqualHeightCardGrid(tiles: tiles, columns: columns);
           },
         ),
+      ],
+    );
+  }
+}
+
+/// Sizes each dashboard row to its tallest card, then stretches the other
+/// cards in that row to match. A final incomplete row keeps the same columns
+/// instead of making its cards unexpectedly wider.
+class _EqualHeightCardGrid extends StatelessWidget {
+  final List<Widget> tiles;
+  final int columns;
+  const _EqualHeightCardGrid({required this.tiles, required this.columns});
+
+  @override
+  Widget build(BuildContext context) {
+    const spacing = 8.0;
+    final rows = (tiles.length / columns).ceil();
+    return Column(
+      children: [
+        for (var row = 0; row < rows; row++) ...[
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var column = 0; column < columns; column++) ...[
+                  if (column > 0) const SizedBox(width: spacing),
+                  Expanded(
+                    child: row * columns + column < tiles.length
+                        ? tiles[row * columns + column]
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (row < rows - 1) const SizedBox(height: spacing),
+        ],
       ],
     );
   }
@@ -1025,13 +1162,29 @@ class _CustomerCards extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (data.customerOfTheMonth != null)
+        if (data.monthlyCustomerWinners.isNotEmpty)
           ListTile(
-            leading: const Icon(Icons.emoji_events),
+            leading: const Icon(Icons.calendar_month_outlined),
             title: const Text('Customer of the Month'),
-            subtitle: Text(data.customerOfTheMonth!.name),
+            subtitle: Text(
+              data.customerOfTheMonth?.name ?? 'View previous winners',
+            ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openLedger(context, data.customerOfTheMonth!.id),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => _MonthlyCustomerWinnersScreen(
+                  winners: data.monthlyCustomerWinners,
+                ),
+              ),
+            ),
+          ),
+        if (data.customerOfAllTime != null)
+          ListTile(
+            leading: const Icon(Icons.emoji_events_outlined),
+            title: const Text('Customer of All Time'),
+            subtitle: Text(data.customerOfAllTime!.name),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openLedger(context, data.customerOfAllTime!.id),
           ),
         _NamedList('Most loyal', [
           for (final s in data.mostLoyal)
@@ -1054,11 +1207,44 @@ class _CustomerCards extends StatelessWidget {
               onTap: () => _openLedger(context, s.customer.id),
             ),
         ]),
-        _NamedList('At-risk (30+ days)', [
-          for (final c in data.atRisk)
-            _Entry(c.name, onTap: () => _openLedger(context, c.id)),
-        ]),
       ],
+    );
+  }
+}
+
+class _MonthlyCustomerWinnersScreen extends StatelessWidget {
+  final List<CustomerMonthWinner> winners;
+  const _MonthlyCustomerWinnersScreen({required this.winners});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Monthly Customer Winners')),
+      body: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: winners.length,
+        separatorBuilder: (_, _) => const Divider(indent: 72),
+        itemBuilder: (context, index) {
+          final winner = winners[index];
+          return ListTile(
+            leading: CircleAvatar(
+              child: Text(winner.customer.name.characters.first.toUpperCase()),
+            ),
+            title: Text(winner.customer.name),
+            subtitle: Text(DateFormat.yMMMM().format(winner.monthStart)),
+            trailing: Text(
+              _currency.format(winner.amount),
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    CustomerLedgerScreen(customerId: winner.customer.id),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

@@ -80,6 +80,26 @@ h2 { margin: 30px 0 12px; font-size: 1.35rem; }
   text-align: center;
 }
 
+.statement-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.statement-actions button {
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid #8b4513;
+  border-radius: 999px;
+  color: #71370f;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
 .transactions { display: grid; gap: 10px; }
 
 .statement-tabs {
@@ -195,4 +215,12 @@ footer {
   .qr-card { width: 100%; }
   .document-header { align-items: center; }
   .document-header time { display: none; }
+}
+
+@media print {
+  body { background: #fff; }
+  .topbar, .statement-actions, .bookmark-note, .statement-tabs { display: none; }
+  .shell { width: 100%; padding: 0; }
+  .tab-panel[hidden] { display: block; }
+  .transaction, .balance-card, .qr-card { break-inside: avoid; box-shadow: none; }
 }

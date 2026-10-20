@@ -2,6 +2,7 @@ import 'package:bakery_app/analytics/batch_calculations.dart';
 import 'package:bakery_app/analytics/customer_calculations.dart';
 import 'package:bakery_app/analytics/dashboard_analytics.dart';
 import 'package:bakery_app/models/batch.dart';
+import 'package:bakery_app/models/customer.dart';
 import 'package:bakery_app/models/expense.dart';
 import 'package:bakery_app/models/loyalty_adjustment.dart';
 import 'package:bakery_app/models/product.dart';
@@ -70,6 +71,43 @@ void main() {
     expect(data.thisMonthNetProfit, 45);
   });
 
+  test('customer of the month is separate from customer of all time', () {
+    final customers = [
+      Customer(id: 1, name: 'All-time winner', updatedAt: now),
+      Customer(id: 2, name: 'October winner', updatedAt: now),
+    ];
+    final data = computeDashboard(
+      products: const [],
+      customers: customers,
+      batches: [_batch(now), _batch(now, id: 2, isPersonal: true)],
+      sales: [
+        _sale(
+          1,
+          batchId: 1,
+          customerId: 1,
+          amount: 1000,
+          saleDate: DateTime(2026, 9, 30),
+        ),
+        _sale(2, batchId: 1, customerId: 1, amount: 50),
+        _sale(3, batchId: 2, customerId: 2, amount: 200),
+      ],
+      now: now,
+    );
+
+    expect(data.customerOfTheMonth?.name, 'October winner');
+    expect(data.customerOfAllTime?.name, 'All-time winner');
+    expect(data.monthlyCustomerWinners.length, 2);
+    expect(data.monthlyCustomerWinners.first.customer.name, 'October winner');
+    expect(data.monthlyCustomerWinners.first.amount, 200);
+    expect(data.monthlyCustomerWinners.last.customer.name, 'All-time winner');
+    expect(data.monthlyCustomerWinners.last.amount, 1000);
+    expect(data.topSpenders.firstWhere((s) => s.customer.id == 2).value, 200);
+    expect(
+      data.topUnpaidBalances.firstWhere((s) => s.customer.id == 2).value,
+      200,
+    );
+  });
+
   test(
     'loyalty keeps categories separate and applies redemption/adjustment',
     () {
@@ -131,6 +169,7 @@ Batch _batch(
   int produced = 10,
   double unitPrice = 10,
   double unitCost = 0,
+  bool isPersonal = false,
 }) => Batch(
   id: id,
   productId: productId,
@@ -139,23 +178,26 @@ Batch _batch(
   unitPrice: unitPrice,
   unitCost: unitCost,
   totalValue: produced * unitPrice,
+  isPersonal: isPersonal,
   updatedAt: date,
 );
 
 Sale _sale(
   int id, {
   required int batchId,
+  int customerId = 1,
   int quantity = 1,
   double amount = 0,
   SaleType type = SaleType.customerSale,
   bool paid = false,
   DateTime? datePaid,
+  DateTime? saleDate,
   bool deleted = false,
 }) => Sale(
   id: id,
   batchId: batchId,
-  customerId: 1,
-  saleDate: DateTime(2026, 10, 19),
+  customerId: customerId,
+  saleDate: saleDate ?? DateTime(2026, 10, 19),
   quantity: quantity,
   amount: amount,
   paid: paid,

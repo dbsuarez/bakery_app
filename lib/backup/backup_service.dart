@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueChanged, kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -18,6 +18,31 @@ import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../utils/web_download.dart';
+
+class BackupProgress {
+  final int completed;
+  final int total;
+  final int bytesCompleted;
+  final int bytesTotal;
+  final String message;
+  const BackupProgress({
+    required this.completed,
+    required this.total,
+    required this.bytesCompleted,
+    required this.bytesTotal,
+    required this.message,
+  });
+
+  double? get fraction => bytesTotal > 0
+      ? bytesCompleted / bytesTotal
+      : total == 0
+      ? null
+      : completed / total;
+}
+
+class BackupExportCancelled implements Exception {
+  const BackupExportCancelled();
+}
 
 /// Builds a versioned JSON snapshot of every persisted app data set.
 String buildBackupJson(AppState state) {
@@ -100,7 +125,11 @@ Map<String, dynamic> buildBackupDocument({
 }
 
 /// Exports a complete ZIP containing database data and storage media.
-Future<void> exportBackup(AppState state) async {
+Future<void> exportBackup(
+  AppState state, {
+  ValueChanged<BackupProgress>? onProgress,
+  bool Function()? isCancelled,
+}) async {
   final json = buildBackupJson(state);
   final fileName =
       'bakery_backup_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.zip';
@@ -110,6 +139,7 @@ Future<void> exportBackup(AppState state) async {
     );
   final client = Supabase.instance.client;
   final uid = client.auth.currentUser!.id;
+  final media = <({String bucket, String name, int size})>[];
   for (final bucket in const ['product-photos', 'qr-codes']) {
     var offset = 0;
     const pageSize = 100;
@@ -120,20 +150,73 @@ Future<void> exportBackup(AppState state) async {
             path: uid,
             searchOptions: SearchOptions(limit: pageSize, offset: offset),
           );
-      for (final object in objects.where(
-        (object) => object.name != '.emptyFolderPlaceholder',
-      )) {
-        final bytes = await client.storage
-            .from(bucket)
-            .download('$uid/${object.name}');
-        archive.addFile(
-          ArchiveFile('media/$bucket/${object.name}', bytes.length, bytes),
-        );
-      }
+      media.addAll(
+        objects
+            .where((object) => object.name != '.emptyFolderPlaceholder')
+            .map(
+              (object) => (
+                bucket: bucket,
+                name: object.name,
+                size: switch (object.metadata?['size']) {
+                  final num value => value.toInt(),
+                  final String value => int.tryParse(value) ?? 0,
+                  _ => 0,
+                },
+              ),
+            ),
+      );
       if (objects.length < pageSize) break;
       offset += objects.length;
     }
   }
+  final totalBytes = media.fold<int>(0, (sum, item) => sum + item.size);
+  var completedBytes = 0;
+  String status(int completed) {
+    final doneMb = completedBytes / (1024 * 1024);
+    final totalMb = totalBytes / (1024 * 1024);
+    return '$completed/${media.length} images · '
+        '${doneMb.toStringAsFixed(1)}/${totalMb.toStringAsFixed(1)} MB';
+  }
+
+  onProgress?.call(
+    BackupProgress(
+      completed: 0,
+      total: media.length,
+      bytesCompleted: 0,
+      bytesTotal: totalBytes,
+      message: status(0),
+    ),
+  );
+  for (var index = 0; index < media.length; index++) {
+    if (isCancelled?.call() ?? false) throw const BackupExportCancelled();
+    final item = media[index];
+    final bytes = await client.storage
+        .from(item.bucket)
+        .download('$uid/${item.name}');
+    archive.addFile(
+      ArchiveFile('media/${item.bucket}/${item.name}', bytes.length, bytes),
+    );
+    completedBytes += bytes.length;
+    onProgress?.call(
+      BackupProgress(
+        completed: index + 1,
+        total: media.length,
+        bytesCompleted: completedBytes,
+        bytesTotal: totalBytes,
+        message: status(index + 1),
+      ),
+    );
+  }
+  if (isCancelled?.call() ?? false) throw const BackupExportCancelled();
+  onProgress?.call(
+    BackupProgress(
+      completed: media.length,
+      total: media.length,
+      bytesCompleted: completedBytes,
+      bytesTotal: totalBytes,
+      message: 'Creating ZIP...',
+    ),
+  );
   final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
 
   if (kIsWeb) {

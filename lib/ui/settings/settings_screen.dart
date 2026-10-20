@@ -19,6 +19,7 @@ import '../import/import_screen.dart';
 import '../import/restore_screen.dart';
 import '../products/products_list_screen.dart';
 import 'qr_codes_screen.dart';
+import 'data_health_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,6 +32,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _exporting = false;
   bool _exportingReport = false;
   bool _optimizingImages = false;
+  bool _cancelBackup = false;
+  backup.BackupProgress? _backupProgress;
   Future<_LockState>? _lockStateFuture;
 
   @override
@@ -182,6 +185,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const _SectionHeader('Data'),
           ListTile(
+            leading: const Icon(Icons.health_and_safety_outlined),
+            title: const Text('Data Health'),
+            subtitle: const Text(
+              'Check relationships, inventory, images, and QR storage',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const DataHealthScreen())),
+          ),
+          ListTile(
             leading: const Icon(Icons.upload_file),
             title: const Text('Import Latest Spreadsheet'),
             trailing: const Icon(Icons.chevron_right),
@@ -201,20 +215,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.backup_outlined),
             title: const Text('Export Full Backup (ZIP + images)'),
-            subtitle: const Text(
-              'Database data, product photos, and payment QR images',
+            subtitle: Text(
+              _backupProgress?.message ??
+                  'Database data, product photos, and payment QR images',
             ),
             trailing: _exporting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                ? IconButton(
+                    tooltip: 'Cancel backup',
+                    onPressed: () => setState(() => _cancelBackup = true),
+                    icon: const Icon(Icons.close),
                   )
                 : const Icon(Icons.chevron_right),
             onTap: _exporting
                 ? null
                 : () => _exportBackup(context, includeImages: true),
           ),
+          if (_exporting && _backupProgress != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: LinearProgressIndicator(value: _backupProgress!.fraction),
+            ),
           ListTile(
             leading: const Icon(Icons.data_object_outlined),
             title: const Text('Export Data Only (JSON)'),
@@ -261,17 +281,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : () => _showReportRangeDialog(context),
           ),
           const _SectionHeader('Appearance'),
-          Consumer<ThemeController>(
-            builder: (context, themeController, _) => SwitchListTile(
-              secondary: const Icon(Icons.short_text),
-              title: const Text('Show card descriptions on Dashboard'),
-              subtitle: const Text(
-                'Turn off to shrink the Dashboard cards to just label and value',
-              ),
-              value: themeController.showCardDescriptions,
-              onChanged: (v) => themeController.setShowCardDescriptions(v),
-            ),
-          ),
           const _ThemeSection(),
           if (lockService != null) ...[
             const _SectionHeader('Security'),
@@ -869,12 +878,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool includeImages,
   }) async {
     setState(() => _exporting = true);
+    _cancelBackup = false;
+    _backupProgress = null;
     try {
       final state = context.read<AppState>();
       if (includeImages) {
-        await backup.exportBackup(state);
+        await backup.exportBackup(
+          state,
+          onProgress: (progress) {
+            if (mounted) setState(() => _backupProgress = progress);
+          },
+          isCancelled: () => _cancelBackup,
+        );
       } else {
         await backup.exportDataBackup(state);
+      }
+    } on backup.BackupExportCancelled {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Backup cancelled.')));
       }
     } catch (e) {
       if (context.mounted) {
@@ -883,7 +906,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _backupProgress = null;
+        });
+      }
     }
   }
 

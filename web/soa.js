@@ -134,6 +134,18 @@ function render(data) {
     `Thank you for supporting ${businessName}! This is a read-only statement; contact us if anything needs to be corrected.`;
   document.querySelector('#app').replaceChildren(content);
 
+  document.querySelector('#print-statement')?.addEventListener('click', () => window.print());
+  document.querySelector('#share-statement')?.addEventListener('click', async () => {
+    const share = { title: document.title, url: window.location.href };
+    if (navigator.share) {
+      await navigator.share(share);
+    } else {
+      await navigator.clipboard.writeText(window.location.href);
+      window.alert('Statement link copied.');
+    }
+  });
+  document.querySelector('#refresh-statement')?.addEventListener('click', () => window.location.reload());
+
   const tabs = [...document.querySelectorAll('.tab-button')];
   const panels = [...document.querySelectorAll('.tab-panel')];
   tabs.forEach((tab) => tab.addEventListener('click', () => {
