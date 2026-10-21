@@ -46,14 +46,11 @@ String _dateOnly(DateTime dt) => dt.toIso8601String().split('T').first;
 
 /// Enforces the app's settled-accounting rule before a transaction or batch
 /// mutation is sent. PostgreSQL triggers/RPCs repeat this check authoritatively.
-void ensureBatchTransactionsMutable({
-  required bool locked,
-  required bool remitted,
-}) {
-  if (locked || remitted) {
+void ensureBatchTransactionsMutable({required bool locked}) {
+  if (locked) {
     throw StateError(
-      'Transactions in a remitted batch cannot be changed. Reopen the '
-      'remittance first.',
+      'Transactions in a locked batch cannot be changed. Unlock the batch '
+      'first.',
     );
   }
 }
@@ -260,13 +257,10 @@ class RemoteRepository implements BakeryRepository {
   Future<void> _ensureBatchUnlocked(String batchUuid) async {
     final batch = await client
         .from('batches')
-        .select('locked, remitted')
+        .select('locked')
         .eq('id', batchUuid)
         .single();
-    ensureBatchTransactionsMutable(
-      locked: batch['locked'] as bool? ?? false,
-      remitted: batch['remitted'] as bool? ?? false,
-    );
+    ensureBatchTransactionsMutable(locked: batch['locked'] as bool? ?? false);
   }
 
   Future<void> _ensureSaleUnlocked(int saleId) async {

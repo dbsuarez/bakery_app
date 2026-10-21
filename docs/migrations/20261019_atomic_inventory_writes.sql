@@ -34,8 +34,8 @@ begin
   for update;
   if not found then raise exception 'Batch not found'; end if;
 
-  if p_sale_type = 'customer_sale' and (target_batch.locked or target_batch.remitted) then
-    raise exception 'Cannot add a customer sale to a remitted batch';
+  if p_sale_type = 'customer_sale' and target_batch.locked then
+    raise exception 'Cannot add a customer sale to a locked batch';
   end if;
 
   if p_sale_type in ('customer_sale', 'internal_consumption', 'points_redemption') then
@@ -89,8 +89,8 @@ begin
   where id = p_batch_id and user_id = auth.uid() and not is_deleted
   for update;
   if not found then raise exception 'Batch not found'; end if;
-  if target_batch.locked or target_batch.remitted then
-    raise exception 'Cannot add transactions to a remitted batch';
+  if target_batch.locked then
+    raise exception 'Cannot add transactions to a locked batch';
   end if;
 
   select coalesce(sum((value->>'quantity')::integer), 0)::integer
@@ -168,16 +168,16 @@ begin
 
   if exists (
     select 1 from public.batches
-    where id = current_sale.batch_id and (locked or remitted)
+    where id = current_sale.batch_id and locked
   ) then
-    raise exception 'Transactions in a remitted batch cannot be changed. Reopen the remittance first.';
+    raise exception 'Transactions in a locked batch cannot be changed. Unlock the batch first.';
   end if;
 
   select * into target_batch from public.batches
   where id = p_batch_id and user_id = auth.uid() and not is_deleted;
   if not found then raise exception 'Batch not found'; end if;
-  if p_sale_type = 'customer_sale' and (target_batch.locked or target_batch.remitted) then
-    raise exception 'Transactions cannot be moved into a remitted batch';
+  if p_sale_type = 'customer_sale' and target_batch.locked then
+    raise exception 'Transactions cannot be moved into a locked batch';
   end if;
 
   if p_sale_type in ('customer_sale', 'internal_consumption', 'points_redemption') then

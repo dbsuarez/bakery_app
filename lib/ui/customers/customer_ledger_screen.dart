@@ -21,6 +21,7 @@ import '../../utils/app_date_format.dart';
 import '../../utils/guarded_action.dart';
 import '../../utils/money.dart';
 import '../../utils/note_dialog.dart';
+import '../batches/batch_detail_screen.dart';
 import '../single_sale/single_sale_screen.dart';
 import '../widgets/product_avatar.dart';
 import '../widgets/qr_quick_view.dart';
@@ -1602,6 +1603,18 @@ class _TransactionHistorySectionState
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     NoteIndicator(note: sale.notes),
+                    if (isCustomerSale && !sale.paid && batch?.remitted == true)
+                      IconButton(
+                        tooltip: 'Open remitted batch',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.inventory_2_outlined, size: 20),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                BatchDetailScreen(batchId: sale.batchId),
+                          ),
+                        ),
+                      ),
                     if (!isCustomerSale)
                       Chip(
                         label: Text(_saleTypeLabel(sale.saleType.value)),
@@ -1888,6 +1901,15 @@ class _PaymentHistoryTab extends StatelessWidget {
     }
 
     final total = sumMoney(payments.map((p) => p.amount));
+    final paymentsByDate = <DateTime, List<PaymentEvent>>{};
+    for (final payment in payments) {
+      final day = DateTime(
+        payment.date.year,
+        payment.date.month,
+        payment.date.day,
+      );
+      paymentsByDate.putIfAbsent(day, () => []).add(payment);
+    }
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1896,31 +1918,57 @@ class _PaymentHistoryTab extends StatelessWidget {
           '${payments.length} payment(s) · Total: ${_currency.format(total)}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: 8),
-        for (final p in payments)
-          Builder(
-            builder: (context) {
-              final batch = appState.batchById(p.batchId);
-              final product = batch == null
-                  ? null
-                  : appState.productById(batch.productId);
-              return ListTile(
-                leading: ProductAvatar(imageUrl: product?.imageUrl),
-                title: Text('${product?.title ?? ''} × ${p.quantity}'),
-                subtitle: Text(
-                  '${appDateFormat.format(p.date)}'
-                  '${p.paymentMethod != null ? ' · via ${p.paymentMethod}' : ''}',
+        const SizedBox(height: 12),
+        for (final group in paymentsByDate.entries) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    appDateFormat.format(group.key),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    NoteIndicator(note: p.notes),
-                    Text(_currency.format(p.amount)),
-                  ],
+                Text(
+                  '${group.value.length} payment${group.value.length == 1 ? '' : 's'} · '
+                  '${_currency.format(sumMoney(group.value.map((p) => p.amount)))}',
+                  style: Theme.of(context).textTheme.labelLarge,
                 ),
-              );
-            },
+              ],
+            ),
           ),
+          for (final p in group.value)
+            Builder(
+              builder: (context) {
+                final batch = appState.batchById(p.batchId);
+                final product = batch == null
+                    ? null
+                    : appState.productById(batch.productId);
+                return ListTile(
+                  leading: ProductAvatar(imageUrl: product?.imageUrl),
+                  title: Text('${product?.title ?? ''} × ${p.quantity}'),
+                  subtitle: p.paymentMethod == null
+                      ? null
+                      : Text('via ${p.paymentMethod}'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      NoteIndicator(note: p.notes),
+                      Text(_currency.format(p.amount)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 12),
+        ],
       ],
     );
   }

@@ -49,7 +49,7 @@ Locked/remitted batches reject new customer sales, but `updateSale()` and `delet
 - Missing from update: `lib/repository/remote_repository.dart:454`
 - Missing from deletion: `lib/repository/remote_repository.dart:622`
 
-**Resolution (2026-10-19):** Flutter now rejects sale updates/deletes when the current or destination batch is locked or remitted. The appended `trg_prevent_remitted_sale_mutation` PostgreSQL trigger provides authoritative enforcement for every client. The existing reopen-remittance action must run first. Apply the updated SQL for database enforcement.
+**Resolution (updated 2026-10-21):** Flutter rejects sale updates/deletes while a batch is locked. A remitted batch may be temporarily unlocked for corrections without removing it from remittance history, then locked again afterward. PostgreSQL triggers and the atomic sale RPCs enforce the same lock-based rule. Apply `docs/fix_unlocked_remitted_transactions.sql` and rerun `docs/migrations/20261019_atomic_inventory_writes.sql` for existing databases.
 
 ### Addressed locally — Concurrent devices could oversell inventory
 

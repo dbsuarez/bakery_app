@@ -330,7 +330,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Unlock batch?'),
-        content: const Text('This allows editing batch metadata again.'),
+        content: const Text(
+          'This allows corrections to the batch and its transactions while '
+          'keeping it in remittance history. Lock it again when finished.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -356,8 +359,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Lock batch?'),
         content: const Text(
-          'This blocks further edits to batch metadata and new customer '
-          'sales, same as marking it remitted.',
+          'This blocks further edits to batch metadata and transactions, '
+          'same as marking it remitted.',
         ),
         actions: [
           TextButton(

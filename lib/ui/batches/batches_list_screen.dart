@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../../analytics/batch_calculations.dart';
 import '../../app_state.dart';
 import '../../models/batch.dart';
+import '../../repository/bakery_repository.dart';
 import '../../utils/app_date_format.dart';
+import '../../utils/guarded_action.dart';
 import '../../utils/money.dart';
 import '../widgets/product_avatar.dart';
 import 'batch_form_screen.dart';
@@ -34,6 +36,7 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
   late BatchFilter _filter = widget.initialFilter;
   late String _search = widget.initialSearch;
   late final _searchController = TextEditingController(text: _search);
+  final Set<int> _selectedBatchIds = {};
 
   @override
   void dispose() {
@@ -55,6 +58,80 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
   }
 
   bool _matches(Batch batch) => _matchesFilter(batch, _filter);
+
+  static bool _isSelectable(Batch batch) =>
+      !batch.remitted && !batch.isPersonal && !batch.isDeleted;
+
+  void _toggleSelection(Batch batch) {
+    if (!_isSelectable(batch)) return;
+    setState(() {
+      if (!_selectedBatchIds.add(batch.id)) {
+        _selectedBatchIds.remove(batch.id);
+      }
+    });
+  }
+
+  Future<void> _markSelectedRemitted(
+    BuildContext context,
+    List<Batch> selectedBatches,
+  ) async {
+    if (selectedBatches.isEmpty) return;
+
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Mark ${selectedBatches.length} '
+          '${selectedBatches.length == 1 ? 'batch' : 'batches'} remitted?',
+        ),
+        content: Text(
+          'Remittance date: ${appDateFormat.format(picked)}\n\n'
+          'This locks the selected batch metadata from further edits. '
+          'Sale payment status remains editable.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Mark Remitted'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    var succeeded = false;
+    await runGuarded(context, () async {
+      final repository = context.read<BakeryRepository>();
+      for (final batch in selectedBatches) {
+        await repository.markBatchRemitted(batch.id, picked);
+      }
+      succeeded = true;
+    });
+    if (succeeded && context.mounted) {
+      setState(_selectedBatchIds.clear);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${selectedBatches.length} '
+            '${selectedBatches.length == 1 ? 'batch' : 'batches'} marked remitted',
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,26 +162,94 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
     final remittanceTotal = sumMoney(
       batches.map((batch) => batchRevenue(batch.id, appState.sales)),
     );
+    final selectionMode = _selectedBatchIds.isNotEmpty;
+    final selectedBatches = appState.batches
+        .where(
+          (batch) =>
+              _selectedBatchIds.contains(batch.id) && _isSelectable(batch),
+        )
+        .toList();
+    final selectedTotal = sumMoney(
+      selectedBatches.map(
+        (batch) => batchRevenue(batch.id, appState.sales),
+      ),
+    );
+    final visibleSelectableIds = batches
+        .where(_isSelectable)
+        .map((batch) => batch.id)
+        .toSet();
+    final allVisibleSelected =
+        visibleSelectableIds.isNotEmpty &&
+        visibleSelectableIds.every(_selectedBatchIds.contains);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Batches'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: 'Unpaid report',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const UnpaidReportScreen()),
+        leading: selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Exit selection',
+                onPressed: () => setState(_selectedBatchIds.clear),
+              )
+            : null,
+        title: Text(
+          selectionMode ? '${_selectedBatchIds.length} selected' : 'Batches',
+        ),
+        actions: selectionMode
+            ? [
+                IconButton(
+                  icon: Icon(
+                    allVisibleSelected ? Icons.deselect : Icons.select_all,
+                  ),
+                  tooltip: allVisibleSelected
+                      ? 'Deselect visible batches'
+                      : 'Select all visible batches',
+                  onPressed: visibleSelectableIds.isEmpty
+                      ? null
+                      : () => setState(() {
+                          if (allVisibleSelected) {
+                            _selectedBatchIds.removeAll(visibleSelectableIds);
+                          } else {
+                            _selectedBatchIds.addAll(visibleSelectableIds);
+                          }
+                        }),
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  tooltip: 'Unpaid report',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const UnpaidReportScreen(),
+                    ),
+                  ),
+                ),
+              ],
+      ),
+      floatingActionButton: selectionMode
+          ? null
+          : FloatingActionButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BatchFormScreen()),
+              ),
+              child: const Icon(Icons.add),
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const BatchFormScreen())),
-        child: const Icon(Icons.add),
-      ),
+      bottomNavigationBar: selectionMode
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: FilledButton.icon(
+                  onPressed: selectedBatches.isEmpty
+                      ? null
+                      : () => _markSelectedRemitted(context, selectedBatches),
+                  icon: const Icon(Icons.lock_outline),
+                  label: Text(
+                    'Mark remitted · ${_currency.format(selectedTotal)}',
+                  ),
+                ),
+              ),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -209,28 +354,38 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                           : batch.remitted
                           ? Icons.lock
                           : Icons.lock_open;
+                      final selectable = _isSelectable(batch);
+                      final selected = _selectedBatchIds.contains(batch.id);
                       return ListTile(
-                        leading: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            ProductAvatar(imageUrl: product?.imageUrl),
-                            Positioned(
-                              right: -2,
-                              bottom: -2,
-                              child: CircleAvatar(
-                                radius: 9,
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).scaffoldBackgroundColor,
-                                child: Icon(
-                                  statusIcon,
-                                  size: 11,
-                                  color: batch.remitted ? Colors.grey : null,
-                                ),
+                        selected: selected,
+                        leading: selectionMode && selectable
+                            ? Checkbox(
+                                value: selected,
+                                onChanged: (_) => _toggleSelection(batch),
+                              )
+                            : Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  ProductAvatar(imageUrl: product?.imageUrl),
+                                  Positioned(
+                                    right: -2,
+                                    bottom: -2,
+                                    child: CircleAvatar(
+                                      radius: 9,
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).scaffoldBackgroundColor,
+                                      child: Icon(
+                                        statusIcon,
+                                        size: 11,
+                                        color: batch.remitted
+                                            ? Colors.grey
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
                         title: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -261,14 +416,25 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                             : batch.remitted
                             ? const Text('Remitted')
                             : Text('₱${batch.totalValue.toStringAsFixed(2)}'),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SwipeableBatchDetailScreen(
-                              batchIds: batches.map((b) => b.id).toList(),
-                              initialIndex: batches.indexOf(batch),
+                        onLongPress: selectable
+                            ? () => setState(
+                                () => _selectedBatchIds.add(batch.id),
+                              )
+                            : null,
+                        onTap: () {
+                          if (selectionMode) {
+                            _toggleSelection(batch);
+                            return;
+                          }
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => SwipeableBatchDetailScreen(
+                                batchIds: batches.map((b) => b.id).toList(),
+                                initialIndex: batches.indexOf(batch),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     },
                   ),

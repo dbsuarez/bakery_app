@@ -294,9 +294,9 @@ begin
     from public.batches b
     where b.id = old.batch_id
       and b.user_id = auth.uid()
-      and (b.locked or b.remitted)
+      and b.locked
   ) then
-    raise exception 'Transactions in a remitted batch cannot be changed. Reopen the remittance first.'
+    raise exception 'Transactions in a locked batch cannot be changed. Unlock the batch first.'
       using errcode = 'P0001';
   end if;
 
@@ -307,9 +307,9 @@ begin
        from public.batches b
        where b.id = new.batch_id
          and b.user_id = auth.uid()
-         and (b.locked or b.remitted)
+         and b.locked
      ) then
-    raise exception 'Transactions cannot be moved into a remitted batch.'
+    raise exception 'Transactions cannot be moved into a locked batch.'
       using errcode = 'P0001';
   end if;
 
@@ -337,9 +337,9 @@ begin
     join public.batches b on b.id = s.batch_id
     where s.id = target_sale_id
       and s.user_id = auth.uid()
-      and (b.locked or b.remitted)
+      and b.locked
   ) then
-    raise exception 'Payments in a remitted batch cannot be changed. Reopen the remittance first.'
+    raise exception 'Payments in a locked batch cannot be changed. Unlock the batch first.'
       using errcode = 'P0001';
   end if;
   return case when tg_op = 'DELETE' then old else new end;
