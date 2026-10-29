@@ -4,7 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 /// Opens [imageUrl] full-screen over a dark backdrop, pinch-to-zoom and
 /// pannable, dismissed by the back button/gesture or tapping the image.
 /// [title], if given, is shown in the app bar (e.g. the product name).
-void showFullscreenImage(BuildContext context, String imageUrl, {String? title}) {
+void showFullscreenImage(
+  BuildContext context,
+  String imageUrl, {
+  String? title,
+}) {
   showFullscreenImageGallery(context, imageUrls: [imageUrl], titles: [title]);
 }
 

@@ -55,6 +55,12 @@ class BackupRestoreService {
     final report = RestoreReport.fromJson(
       Map<String, dynamic>.from(value as Map),
     );
+    if (backup.containsKey('cash_advances')) {
+      await client.rpc(
+        'restore_cash_advances_from_backup',
+        params: {'p_backup': backup},
+      );
+    }
     if (payload.media.isNotEmpty) {
       final uid = client.auth.currentUser!.id;
       var restored = 0;
@@ -134,6 +140,8 @@ const _backupV2ListKeys = <String>[
   'expenses',
   'customer_favorites',
   'favorite_dismissals',
+  'cash_advances',
+  'cash_advance_payments',
 ];
 
 /// Decodes and completely validates a backup before any network request or
@@ -155,6 +163,9 @@ Map<String, dynamic> decodeAndValidateBackupV2(Uint8List bytes) {
       'backup before restoring.',
     );
   }
+  // Cash advances were added without invalidating older complete v2 backups.
+  backup.putIfAbsent('cash_advances', () => <dynamic>[]);
+  backup.putIfAbsent('cash_advance_payments', () => <dynamic>[]);
   final exportedAt = backup['exported_at'];
   if (exportedAt is! String || DateTime.tryParse(exportedAt) == null) {
     throw const FormatException('The backup has an invalid export date.');
@@ -176,6 +187,7 @@ Map<String, dynamic> decodeAndValidateBackupV2(Uint8List bytes) {
   final customerIds = _entityIds(backup, 'customers');
   final batchIds = _entityIds(backup, 'batches');
   final saleIds = _entityIds(backup, 'sales');
+  final cashAdvanceIds = _entityIds(backup, 'cash_advances');
   _entityIds(backup, 'sale_payments');
   _entityIds(backup, 'customer_credits');
   _entityIds(backup, 'loyalty_adjustments');
@@ -192,6 +204,13 @@ Map<String, dynamic> decodeAndValidateBackupV2(Uint8List bytes) {
   _requireReferences(backup, 'customer_favorites', 'product_id', productIds);
   _requireReferences(backup, 'favorite_dismissals', 'customer_id', customerIds);
   _requireReferences(backup, 'favorite_dismissals', 'batch_id', batchIds);
+  _requireReferences(backup, 'cash_advances', 'customer_id', customerIds);
+  _requireReferences(
+    backup,
+    'cash_advance_payments',
+    'cash_advance_id',
+    cashAdvanceIds,
+  );
   return backup;
 }
 

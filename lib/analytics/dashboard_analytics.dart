@@ -1,4 +1,5 @@
 import '../models/batch.dart';
+import '../models/cash_advance.dart';
 import '../models/customer.dart';
 import '../models/expense.dart';
 import '../models/product.dart';
@@ -191,6 +192,8 @@ DashboardData computeDashboard({
   required List<Batch> batches,
   required List<Sale> sales,
   List<SalePayment> salePayments = const [],
+  List<CashAdvance> cashAdvances = const [],
+  List<CashAdvancePayment> cashAdvancePayments = const [],
   List<Expense> expenses = const [],
   DateTime? now,
 }) {
@@ -409,7 +412,13 @@ DashboardData computeDashboard({
           .map(
             (c) => CustomerStat(
               c,
-              customerBalance(c.id, customerLedgerSales, salePayments),
+              customerBalance(
+                c.id,
+                customerLedgerSales,
+                salePayments,
+                cashAdvances,
+                cashAdvancePayments,
+              ),
             ),
           )
           .where((s) => s.value > 0)

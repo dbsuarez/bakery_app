@@ -1,4 +1,5 @@
 import '../models/batch.dart';
+import '../models/cash_advance.dart';
 import '../models/customer.dart';
 import '../models/customer_credit.dart';
 import '../models/loyalty_adjustment.dart';
@@ -24,6 +25,25 @@ double saleRemainingAmount(Sale sale, List<SalePayment> payments) {
   return remaining < 0 ? 0 : fromCentavos(remaining);
 }
 
+double cashAdvancePaidAmount(
+  int cashAdvanceId,
+  List<CashAdvancePayment> payments,
+) => sumMoney(
+  payments
+      .where((p) => p.cashAdvanceId == cashAdvanceId && !p.isDeleted)
+      .map((p) => p.amount),
+);
+
+double cashAdvanceRemainingAmount(
+  CashAdvance advance,
+  List<CashAdvancePayment> payments,
+) {
+  final remaining =
+      toCentavos(advance.amount) -
+      toCentavos(cashAdvancePaidAmount(advance.id, payments));
+  return remaining < 0 ? 0 : fromCentavos(remaining);
+}
+
 /// Spec section 7 rule 6: customer balances include only unpaid
 /// customer_sale rows, net of any partial payments already received
 /// against them.
@@ -31,8 +51,10 @@ double customerBalance(
   int customerId,
   List<Sale> sales, [
   List<SalePayment> payments = const [],
+  List<CashAdvance> cashAdvances = const [],
+  List<CashAdvancePayment> cashAdvancePayments = const [],
 ]) {
-  return sumMoney(
+  final salesBalance = sumMoney(
     sales
         .where(
           (s) =>
@@ -43,6 +65,12 @@ double customerBalance(
         )
         .map((s) => saleRemainingAmount(s, payments)),
   );
+  final cashBalance = sumMoney(
+    cashAdvances
+        .where((a) => a.customerId == customerId && !a.isDeleted && !a.paid)
+        .map((a) => cashAdvanceRemainingAmount(a, cashAdvancePayments)),
+  );
+  return sumMoney([salesBalance, cashBalance]);
 }
 
 /// A customer's running credit balance - positive means the bakery owes

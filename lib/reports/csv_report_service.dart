@@ -22,65 +22,66 @@ String _csvField(Object? value) {
 /// A sales ledger for the given date range (inclusive), one row per
 /// transaction, joined with product/customer/batch names so it reads
 /// standalone in a spreadsheet - no other export needed to make sense of it.
-String buildSalesCsv(
-  AppState state, {
-  DateTime? start,
-  DateTime? end,
-}) {
+String buildSalesCsv(AppState state, {DateTime? start, DateTime? end}) {
   final rows = state.sales.where((s) {
     if (s.isDeleted) return false;
     if (start != null && s.saleDate.isBefore(start)) return false;
     if (end != null && s.saleDate.isAfter(end)) return false;
     return true;
-  }).toList()
-    ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+  }).toList()..sort((a, b) => a.saleDate.compareTo(b.saleDate));
 
   final buffer = StringBuffer();
-  buffer.writeln([
-    'Sale Date',
-    'Product',
-    'Category',
-    'Customer',
-    'Batch Date',
-    'Quantity',
-    'Unit Price',
-    'Amount',
-    'Discount',
-    'Amount Paid',
-    'Amount Remaining',
-    'Sale Type',
-    'Paid',
-    'Date Paid',
-    'Notes',
-  ].map(_csvField).join(','));
+  buffer.writeln(
+    [
+      'Sale Date',
+      'Product',
+      'Category',
+      'Customer',
+      'Batch Date',
+      'Quantity',
+      'Unit Price',
+      'Amount',
+      'Discount',
+      'Amount Paid',
+      'Amount Remaining',
+      'Sale Type',
+      'Paid',
+      'Date Paid',
+      'Notes',
+    ].map(_csvField).join(','),
+  );
 
   for (final s in rows) {
     final batch = state.batchById(s.batchId);
     final product = batch == null ? null : state.productById(batch.productId);
     final customer = state.customerById(s.customerId);
-    buffer.writeln([
-      appDateFormat.format(s.saleDate),
-      product?.title ?? '',
-      product == null ? '' : _categoryLabel(product.category),
-      customer?.name ?? '',
-      batch == null ? '' : appDateFormat.format(batch.batchDate),
-      s.quantity,
-      batch?.unitPrice ?? '',
-      s.amount.toStringAsFixed(2),
-      s.discount.toStringAsFixed(2),
-      salePaidAmount(s.id, state.salePayments).toStringAsFixed(2),
-      saleRemainingAmount(s, state.salePayments).toStringAsFixed(2),
-      _saleTypeLabel(s.saleType),
-      s.saleType == SaleType.customerSale ? (s.paid ? 'Yes' : 'No') : '',
-      s.datePaid == null ? '' : appDateFormat.format(s.datePaid!),
-      s.notes ?? '',
-    ].map(_csvField).join(','));
+    buffer.writeln(
+      [
+        appDateFormat.format(s.saleDate),
+        product?.title ?? '',
+        product == null ? '' : _categoryLabel(product.category),
+        customer?.name ?? '',
+        batch == null ? '' : appDateFormat.format(batch.batchDate),
+        s.quantity,
+        batch?.unitPrice ?? '',
+        s.amount.toStringAsFixed(2),
+        s.discount.toStringAsFixed(2),
+        salePaidAmount(s.id, state.salePayments).toStringAsFixed(2),
+        saleRemainingAmount(s, state.salePayments).toStringAsFixed(2),
+        _saleTypeLabel(s.saleType),
+        s.saleType == SaleType.customerSale ? (s.paid ? 'Yes' : 'No') : '',
+        s.datePaid == null ? '' : appDateFormat.format(s.datePaid!),
+        s.notes ?? '',
+      ].map(_csvField).join(','),
+    );
   }
 
   final totalAmount = rows.fold<double>(0, (sum, s) => sum + s.amount);
   buffer.writeln();
-  buffer.writeln('${_csvField('Total')},,,,,,,${totalAmount.toStringAsFixed(2)}'
-      ',,,,,,');
+  buffer.writeln(
+    '${_csvField('Total')},,,,,,,${totalAmount.toStringAsFixed(2)}'
+    ',,,,,,',
+  );
 
   return buffer.toString();
 }
@@ -125,11 +126,7 @@ Future<void> exportSalesCsv(
     return;
   }
 
-  final file = XFile.fromData(
-    bytes,
-    name: fileName,
-    mimeType: 'text/csv',
-  );
+  final file = XFile.fromData(bytes, name: fileName, mimeType: 'text/csv');
   await SharePlus.instance.share(
     ShareParams(
       files: [file],

@@ -67,7 +67,13 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
         customers = customers
             .where(
               (c) =>
-                  customerBalance(c.id, appState.sales, appState.salePayments) >
+                  customerBalance(
+                    c.id,
+                    appState.sales,
+                    appState.salePayments,
+                    appState.cashAdvances,
+                    appState.cashAdvancePayments,
+                  ) >
                   0,
             )
             .toList();
@@ -77,9 +83,23 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
     // within each group.
     customers.sort((a, b) {
       final aOwes =
-          customerBalance(a.id, appState.sales, appState.salePayments) > 0;
+          customerBalance(
+            a.id,
+            appState.sales,
+            appState.salePayments,
+            appState.cashAdvances,
+            appState.cashAdvancePayments,
+          ) >
+          0;
       final bOwes =
-          customerBalance(b.id, appState.sales, appState.salePayments) > 0;
+          customerBalance(
+            b.id,
+            appState.sales,
+            appState.salePayments,
+            appState.cashAdvances,
+            appState.cashAdvancePayments,
+          ) >
+          0;
       if (aOwes != bOwes) return aOwes ? -1 : 1;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
@@ -223,7 +243,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '${customers.length} customer(s) · Total: '
-                  '₱${customers.fold<double>(0, (sum, c) => sum + customerBalance(c.id, appState.sales, appState.salePayments)).toStringAsFixed(2)}',
+                  '₱${customers.fold<double>(0, (sum, c) => sum + customerBalance(c.id, appState.sales, appState.salePayments, appState.cashAdvances, appState.cashAdvancePayments)).toStringAsFixed(2)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -248,6 +268,8 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
                         customer.id,
                         appState.sales,
                         appState.salePayments,
+                        appState.cashAdvances,
+                        appState.cashAdvancePayments,
                       );
                       final unpaidCount = appState.sales
                           .where(

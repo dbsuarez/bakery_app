@@ -47,24 +47,38 @@ class _UnpaidStatementReportScreenState
     final appState = context.watch<AppState>();
     final business = context.watch<BusinessSettingsController>();
 
-    final withBalance = appState.customers
-        .where((c) =>
-            !c.isArchived &&
-            !c.isPseudoCustomer &&
-            customerBalance(c.id, appState.sales, appState.salePayments) > 0)
-        .toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final withBalance =
+        appState.customers
+            .where(
+              (c) =>
+                  !c.isArchived &&
+                  !c.isPseudoCustomer &&
+                  customerBalance(
+                        c.id,
+                        appState.sales,
+                        appState.salePayments,
+                        appState.cashAdvances,
+                        appState.cashAdvancePayments,
+                      ) >
+                      0,
+            )
+            .toList()
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
 
     // Default to every customer with a balance selected the first time.
     _selected ??= withBalance.map((c) => c.id).toSet();
 
     final visible = withBalance
         .where((c) => c.name.toLowerCase().contains(_search.toLowerCase()))
-        .where((c) => switch (_groupFilter) {
-              null => true,
-              _ungroupedFilterValue => c.group == null,
-              final g => c.group == g,
-            })
+        .where(
+          (c) => switch (_groupFilter) {
+            null => true,
+            _ungroupedFilterValue => c.group == null,
+            final g => c.group == g,
+          },
+        )
         .toList();
 
     final selectedCustomers = withBalance
@@ -72,14 +86,22 @@ class _UnpaidStatementReportScreenState
         .toList();
     final total = sumMoney(
       selectedCustomers.map(
-        (c) => customerBalance(c.id, appState.sales, appState.salePayments),
+        (c) => customerBalance(
+          c.id,
+          appState.sales,
+          appState.salePayments,
+          appState.cashAdvances,
+          appState.cashAdvancePayments,
+        ),
       ),
     );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Statement Report')),
       body: withBalance.isEmpty
-          ? const Center(child: Text('No customers with an outstanding balance.'))
+          ? const Center(
+              child: Text('No customers with an outstanding balance.'),
+            )
           : Column(
               children: [
                 Padding(
@@ -127,8 +149,11 @@ class _UnpaidStatementReportScreenState
                               child: FilterChip(
                                 label: Text(g),
                                 selected: _groupFilter == g,
-                                onSelected: (_) => setState(() =>
-                                    _groupFilter = _groupFilter == g ? null : g),
+                                onSelected: (_) => setState(
+                                  () => _groupFilter = _groupFilter == g
+                                      ? null
+                                      : g,
+                                ),
                               ),
                             ),
                           Padding(
@@ -136,10 +161,12 @@ class _UnpaidStatementReportScreenState
                             child: FilterChip(
                               label: const Text('Ungrouped'),
                               selected: _groupFilter == _ungroupedFilterValue,
-                              onSelected: (_) => setState(() => _groupFilter =
-                                  _groupFilter == _ungroupedFilterValue
-                                      ? null
-                                      : _ungroupedFilterValue),
+                              onSelected: (_) => setState(
+                                () => _groupFilter =
+                                    _groupFilter == _ungroupedFilterValue
+                                    ? null
+                                    : _ungroupedFilterValue,
+                              ),
                             ),
                           ),
                         ],
@@ -151,11 +178,14 @@ class _UnpaidStatementReportScreenState
                   child: Row(
                     children: [
                       Text(
-                          '${_selected!.length}/${withBalance.length} selected'),
+                        '${_selected!.length}/${withBalance.length} selected',
+                      ),
                       const Spacer(),
                       TextButton(
                         onPressed: () => setState(
-                            () => _selected = withBalance.map((c) => c.id).toSet()),
+                          () =>
+                              _selected = withBalance.map((c) => c.id).toSet(),
+                        ),
                         child: const Text('Select all'),
                       ),
                       TextButton(
@@ -172,19 +202,28 @@ class _UnpaidStatementReportScreenState
                     itemBuilder: (context, index) {
                       final customer = visible[index];
                       final balance = customerBalance(
-                          customer.id, appState.sales, appState.salePayments);
+                        customer.id,
+                        appState.sales,
+                        appState.salePayments,
+                        appState.cashAdvances,
+                        appState.cashAdvancePayments,
+                      );
                       return CheckboxListTile(
                         value: _selected!.contains(customer.id),
                         onChanged: (v) => setState(() {
                           _selected = v == true
                               ? {..._selected!, customer.id}
-                              : (_selected!.where((id) => id != customer.id).toSet());
+                              : (_selected!
+                                    .where((id) => id != customer.id)
+                                    .toSet());
                         }),
                         title: Text(customer.name),
                         secondary: CircleAvatar(
-                          child: Text(customer.name.isNotEmpty
-                              ? customer.name[0].toUpperCase()
-                              : '?'),
+                          child: Text(
+                            customer.name.isNotEmpty
+                                ? customer.name[0].toUpperCase()
+                                : '?',
+                          ),
                         ),
                         subtitle: Text(_currency.format(balance)),
                       );
@@ -199,9 +238,7 @@ class _UnpaidStatementReportScreenState
                         Expanded(
                           child: Text(
                             'Total: ${_currency.format(total)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(color: Colors.orange.shade800),
                           ),
                         ),
@@ -213,7 +250,9 @@ class _UnpaidStatementReportScreenState
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.picture_as_pdf_outlined),
                           label: const Text('Share PDF'),
@@ -243,8 +282,9 @@ class _UnpaidStatementReportScreenState
       );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);

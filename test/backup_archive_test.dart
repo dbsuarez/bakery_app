@@ -12,11 +12,7 @@ void main() {
     final archive = Archive()
       ..addFile(ArchiveFile('backup.json', json.length, json))
       ..addFile(
-        ArchiveFile(
-          'media/product-photos/photo.jpg',
-          image.length,
-          image,
-        ),
+        ArchiveFile('media/product-photos/photo.jpg', image.length, image),
       );
     final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
 

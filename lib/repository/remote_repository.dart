@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/batch.dart' as m;
+import '../models/cash_advance.dart' as m;
 import '../models/customer.dart' as m;
 import '../models/customer_credit.dart' as m;
 import '../models/customer_favorite.dart' as m;
@@ -91,6 +92,8 @@ class RemoteRepository implements BakeryRepository {
   final _salePaymentIds = _IdMapper();
   final _customerCreditIds = _IdMapper();
   final _expenseIds = _IdMapper();
+  final _cashAdvanceIds = _IdMapper();
+  final _cashAdvancePaymentIds = _IdMapper();
 
   RemoteRepository(this.client) {
     // All ten consumers subscribe during AppState construction. A broadcast
@@ -254,6 +257,35 @@ class RemoteRepository implements BakeryRepository {
     isDeleted: row['is_deleted'] as bool,
   );
 
+  m.CashAdvance _cashAdvanceFromRow(Map<String, dynamic> row) => m.CashAdvance(
+    id: _cashAdvanceIds.toInt(row['id'] as String),
+    remoteId: row['id'] as String,
+    customerId: _customerIds.toInt(row['customer_id'] as String),
+    advanceDate: DateTime.parse(row['advance_date'] as String),
+    amount: (row['amount'] as num).toDouble(),
+    paid: row['paid'] as bool? ?? false,
+    datePaid: row['date_paid'] == null
+        ? null
+        : DateTime.parse(row['date_paid'] as String),
+    paymentMethod: row['payment_method'] as String?,
+    notes: row['notes'] as String?,
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    isDeleted: row['is_deleted'] as bool? ?? false,
+  );
+
+  m.CashAdvancePayment _cashAdvancePaymentFromRow(Map<String, dynamic> row) =>
+      m.CashAdvancePayment(
+        id: _cashAdvancePaymentIds.toInt(row['id'] as String),
+        remoteId: row['id'] as String,
+        cashAdvanceId: _cashAdvanceIds.toInt(row['cash_advance_id'] as String),
+        amount: (row['amount'] as num).toDouble(),
+        paymentDate: DateTime.parse(row['payment_date'] as String),
+        paymentMethod: row['payment_method'] as String?,
+        notes: row['notes'] as String?,
+        updatedAt: DateTime.parse(row['updated_at'] as String),
+        isDeleted: row['is_deleted'] as bool? ?? false,
+      );
+
   Future<void> _ensureBatchUnlocked(String batchUuid) async {
     final batch = await client
         .from('batches')
@@ -283,6 +315,8 @@ class RemoteRepository implements BakeryRepository {
     'customer_favorites',
     'favorite_dismissals',
     'expenses',
+    'cash_advances',
+    'cash_advance_payments',
   ];
 
   List<Map<String, dynamic>> _snapshotRows(
@@ -410,6 +444,19 @@ class RemoteRepository implements BakeryRepository {
       (snapshot) => snapshot['expenses'].map(_expenseFromRow).toList(),
     );
   }
+
+  @override
+  Stream<List<m.CashAdvance>> watchCashAdvances() => _snapshots.map(
+    (snapshot) => snapshot['cash_advances'].map(_cashAdvanceFromRow).toList(),
+  );
+
+  @override
+  Stream<List<m.CashAdvancePayment>> watchCashAdvancePayments() =>
+      _snapshots.map(
+        (snapshot) => snapshot['cash_advance_payments']
+            .map(_cashAdvancePaymentFromRow)
+            .toList(),
+      );
 
   @override
   Future<void> createProduct(m.Product product) async {
@@ -627,6 +674,94 @@ class RemoteRepository implements BakeryRepository {
   }
 
   @override
+  Future<void> createCashAdvance(m.CashAdvance cashAdvance) async {
+    if (cashAdvance.amount <= 0) {
+      throw ArgumentError('Cash advance amount must be positive.');
+    }
+    await client.from('cash_advances').insert({
+      'customer_id': _customerIds.toUuid(cashAdvance.customerId),
+      'advance_date': _dateOnly(cashAdvance.advanceDate),
+      'amount': cashAdvance.amount,
+      'paid': cashAdvance.paid,
+      'date_paid': cashAdvance.datePaid == null
+          ? null
+          : _dateOnly(cashAdvance.datePaid!),
+      'payment_method': cashAdvance.paymentMethod,
+      'notes': cashAdvance.notes,
+    });
+    refresh();
+  }
+
+  @override
+  Future<void> updateCashAdvance(m.CashAdvance cashAdvance) async {
+    if (cashAdvance.amount <= 0) {
+      throw ArgumentError('Cash advance amount must be positive.');
+    }
+    await client
+        .from('cash_advances')
+        .update({
+          'advance_date': _dateOnly(cashAdvance.advanceDate),
+          'amount': cashAdvance.amount,
+          'notes': cashAdvance.notes,
+        })
+        .eq('id', _cashAdvanceIds.toUuid(cashAdvance.id));
+    refresh();
+  }
+
+  @override
+  Future<void> deleteCashAdvance(int cashAdvanceId) async {
+    await client
+        .from('cash_advances')
+        .update({'is_deleted': true})
+        .eq('id', _cashAdvanceIds.toUuid(cashAdvanceId));
+    refresh();
+  }
+
+  @override
+  Future<void> addCashAdvancePayment(m.CashAdvancePayment payment) async {
+    if (payment.amount <= 0) {
+      throw ArgumentError('Payment amount must be positive.');
+    }
+    await client.rpc(
+      'record_cash_advance_payment',
+      params: {
+        'p_cash_advance_id': _cashAdvanceIds.toUuid(payment.cashAdvanceId),
+        'p_amount': payment.amount,
+        'p_payment_date': _dateOnly(payment.paymentDate),
+        'p_payment_method': payment.paymentMethod,
+        'p_notes': payment.notes,
+      },
+    );
+    refresh();
+  }
+
+  @override
+  Future<void> markCashAdvancePaid(
+    int cashAdvanceId,
+    DateTime paymentDate, {
+    String? paymentMethod,
+  }) async {
+    await client
+        .from('cash_advances')
+        .update({
+          'paid': true,
+          'date_paid': _dateOnly(paymentDate),
+          'payment_method': paymentMethod,
+        })
+        .eq('id', _cashAdvanceIds.toUuid(cashAdvanceId));
+    refresh();
+  }
+
+  @override
+  Future<void> markCashAdvanceUnpaid(int cashAdvanceId) async {
+    await client
+        .from('cash_advances')
+        .update({'paid': false, 'date_paid': null, 'payment_method': null})
+        .eq('id', _cashAdvanceIds.toUuid(cashAdvanceId));
+    refresh();
+  }
+
+  @override
   Future<void> markSalePaid(
     int saleId,
     DateTime paymentDate, {
@@ -794,6 +929,14 @@ class RemoteRepository implements BakeryRepository {
           .eq('customer_id', fromUuid);
     } catch (_) {
       // Ignored - see comment above.
+    }
+    try {
+      await client
+          .from('cash_advances')
+          .update({'customer_id': intoUuid})
+          .eq('customer_id', fromUuid);
+    } catch (_) {
+      // Older databases may not have cash advances yet.
     }
 
     // customer_favorites has a (customer_id, product_id) primary key, so a

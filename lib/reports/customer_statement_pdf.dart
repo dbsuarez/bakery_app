@@ -15,6 +15,7 @@ import '../models/customer.dart';
 import '../models/sale.dart';
 import '../products/qr_photo_service.dart';
 import '../utils/app_date_format.dart';
+import '../utils/money.dart';
 import '../utils/web_download.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
@@ -58,16 +59,29 @@ pw.Page _buildStatementPage({
   required pw.MemoryImage? logo,
   required DateTime now,
 }) {
-  final unpaid = state.sales
-      .where((s) =>
-          s.customerId == customer.id &&
-          !s.isDeleted &&
-          !s.paid &&
-          s.saleType == SaleType.customerSale)
-      .toList()
-    ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+  final unpaid =
+      state.sales
+          .where(
+            (s) =>
+                s.customerId == customer.id &&
+                !s.isDeleted &&
+                !s.paid &&
+                s.saleType == SaleType.customerSale,
+          )
+          .toList()
+        ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+  final unpaidAdvances =
+      state.cashAdvances
+          .where((a) => a.customerId == customer.id && !a.isDeleted && !a.paid)
+          .toList()
+        ..sort((a, b) => a.advanceDate.compareTo(b.advanceDate));
   double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
-  final total = unpaid.fold<double>(0, (sum, s) => sum + remainingFor(s));
+  final total = sumMoney([
+    ...unpaid.map(remainingFor),
+    ...unpaidAdvances.map(
+      (a) => cashAdvanceRemainingAmount(a, state.cashAdvancePayments),
+    ),
+  ]);
 
   return pw.Page(
     pageFormat: PdfPageFormat.a4,
@@ -122,7 +136,7 @@ pw.Page _buildStatementPage({
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 20),
-        if (unpaid.isEmpty)
+        if (unpaid.isEmpty && unpaidAdvances.isEmpty)
           pw.Container(
             padding: const pw.EdgeInsets.all(16),
             decoration: pw.BoxDecoration(
@@ -149,35 +163,78 @@ pw.Page _buildStatementPage({
             children: [
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: brand),
-                children: [
-                  _cell('Date', bold: true),
-                  _cell('Item', bold: true),
-                  _cell('Unit price', bold: true, align: pw.TextAlign.right),
-                  _cell('Qty', bold: true, align: pw.TextAlign.right),
-                  _cell('Amount', bold: true, align: pw.TextAlign.right),
-                ].map((w) => pw.DefaultTextStyle(
-                      style: const pw.TextStyle(color: PdfColors.white),
-                      child: w,
-                    )).toList(),
+                children:
+                    [
+                          _cell('Date', bold: true),
+                          _cell('Item', bold: true),
+                          _cell(
+                            'Unit price',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                          _cell('Qty', bold: true, align: pw.TextAlign.right),
+                          _cell(
+                            'Amount',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                        ]
+                        .map(
+                          (w) => pw.DefaultTextStyle(
+                            style: const pw.TextStyle(color: PdfColors.white),
+                            child: w,
+                          ),
+                        )
+                        .toList(),
               ),
               for (final s in unpaid)
-                pw.TableRow(children: [
-                  _cell(appDateFormat.format(s.saleDate)),
-                  _cell(
-                    salePaidAmount(s.id, state.salePayments) > 0
-                        ? '${_productTitleFor(state, s)} (${_currency.format(salePaidAmount(s.id, state.salePayments))} paid)'
-                        : _productTitleFor(state, s),
-                  ),
-                  _cell(
-                    _unitPriceFor(state, s) == null
-                        ? ''
-                        : _currency.format(_unitPriceFor(state, s)),
-                    align: pw.TextAlign.right,
-                  ),
-                  _cell('${s.quantity}', align: pw.TextAlign.right),
-                  _cell(_currency.format(remainingFor(s)),
-                      align: pw.TextAlign.right),
-                ]),
+                pw.TableRow(
+                  children: [
+                    _cell(appDateFormat.format(s.saleDate)),
+                    _cell(
+                      salePaidAmount(s.id, state.salePayments) > 0
+                          ? '${_productTitleFor(state, s)} (${_currency.format(salePaidAmount(s.id, state.salePayments))} paid)'
+                          : _productTitleFor(state, s),
+                    ),
+                    _cell(
+                      _unitPriceFor(state, s) == null
+                          ? ''
+                          : _currency.format(_unitPriceFor(state, s)),
+                      align: pw.TextAlign.right,
+                    ),
+                    _cell('${s.quantity}', align: pw.TextAlign.right),
+                    _cell(
+                      _currency.format(remainingFor(s)),
+                      align: pw.TextAlign.right,
+                    ),
+                  ],
+                ),
+              for (final advance in unpaidAdvances)
+                pw.TableRow(
+                  children: [
+                    _cell(appDateFormat.format(advance.advanceDate)),
+                    _cell(
+                      cashAdvancePaidAmount(
+                                advance.id,
+                                state.cashAdvancePayments,
+                              ) >
+                              0
+                          ? 'Cash advance (${_currency.format(cashAdvancePaidAmount(advance.id, state.cashAdvancePayments))} paid)'
+                          : 'Cash advance',
+                    ),
+                    _cell('', align: pw.TextAlign.right),
+                    _cell('', align: pw.TextAlign.right),
+                    _cell(
+                      _currency.format(
+                        cashAdvanceRemainingAmount(
+                          advance,
+                          state.cashAdvancePayments,
+                        ),
+                      ),
+                      align: pw.TextAlign.right,
+                    ),
+                  ],
+                ),
             ],
           ),
           pw.SizedBox(height: 16),
@@ -288,11 +345,17 @@ Future<Uint8List> buildCustomerStatementPdf(
   final brand = brandColor ?? _defaultBrandColor;
   final now = DateTime.now();
 
-  final hasUnpaid = state.sales.any((s) =>
-      s.customerId == customer.id &&
-      !s.isDeleted &&
-      !s.paid &&
-      s.saleType == SaleType.customerSale);
+  final hasUnpaid =
+      state.sales.any(
+        (s) =>
+            s.customerId == customer.id &&
+            !s.isDeleted &&
+            !s.paid &&
+            s.saleType == SaleType.customerSale,
+      ) ||
+      state.cashAdvances.any(
+        (a) => a.customerId == customer.id && !a.isDeleted && !a.paid,
+      );
 
   // The PDF core fonts don't cover the peso sign (₱, U+20B1) - Noto Sans
   // does, and the app already requires internet, so fetching it at
@@ -300,21 +363,25 @@ Future<Uint8List> buildCustomerStatementPdf(
   // is fine.
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
-  final qrImages = hasUnpaid ? await _loadQrImages(enabledQrSlots) : <pw.MemoryImage>[];
+  final qrImages = hasUnpaid
+      ? await _loadQrImages(enabledQrSlots)
+      : <pw.MemoryImage>[];
   final logo = await _loadLogoImage();
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
   );
-  doc.addPage(_buildStatementPage(
-    state: state,
-    customer: customer,
-    businessName: businessName,
-    brand: brand,
-    qrImages: qrImages,
-    logo: logo,
-    now: now,
-  ));
+  doc.addPage(
+    _buildStatementPage(
+      state: state,
+      customer: customer,
+      businessName: businessName,
+      brand: brand,
+      qrImages: qrImages,
+      logo: logo,
+      now: now,
+    ),
+  );
 
   return doc.save();
 }
@@ -336,11 +403,13 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
 
   final customerIds = customers.map((c) => c.id).toSet();
   final unpaidSales = state.sales
-      .where((s) =>
-          customerIds.contains(s.customerId) &&
-          !s.isDeleted &&
-          !s.paid &&
-          s.saleType == SaleType.customerSale)
+      .where(
+        (s) =>
+            customerIds.contains(s.customerId) &&
+            !s.isDeleted &&
+            !s.paid &&
+            s.saleType == SaleType.customerSale,
+      )
       .toList();
 
   final byCustomer = <int, List<Sale>>{};
@@ -355,8 +424,10 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
     });
 
   double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
-  final grandTotal =
-      unpaidSales.fold<double>(0, (sum, s) => sum + remainingFor(s));
+  final grandTotal = unpaidSales.fold<double>(
+    0,
+    (sum, s) => sum + remainingFor(s),
+  );
 
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
@@ -412,7 +483,9 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
                     pw.Text(
                       appDateTimeFormat.format(now),
                       style: const pw.TextStyle(
-                          fontSize: 9, color: PdfColors.grey600),
+                        fontSize: 9,
+                        color: PdfColors.grey600,
+                      ),
                     ),
                   ],
                 ),
@@ -457,57 +530,84 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
             children: [
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: brand),
-                children: [
-                  _cell('Date', bold: true),
-                  _cell('Item', bold: true),
-                  _cell('Unit price', bold: true, align: pw.TextAlign.right),
-                  _cell('Qty', bold: true, align: pw.TextAlign.right),
-                  _cell('Amount', bold: true, align: pw.TextAlign.right),
-                ].map((w) => pw.DefaultTextStyle(
-                      style: const pw.TextStyle(color: PdfColors.white),
-                      child: w,
-                    )).toList(),
+                children:
+                    [
+                          _cell('Date', bold: true),
+                          _cell('Item', bold: true),
+                          _cell(
+                            'Unit price',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                          _cell('Qty', bold: true, align: pw.TextAlign.right),
+                          _cell(
+                            'Amount',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                        ]
+                        .map(
+                          (w) => pw.DefaultTextStyle(
+                            style: const pw.TextStyle(color: PdfColors.white),
+                            child: w,
+                          ),
+                        )
+                        .toList(),
               ),
               for (final customerId in sortedCustomerIds) ...[
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
-                    _cell(state.customerById(customerId)?.name ?? 'Unknown customer',
-                        bold: true),
+                    _cell(
+                      state.customerById(customerId)?.name ??
+                          'Unknown customer',
+                      bold: true,
+                    ),
                     _cell(''),
                     _cell(''),
                     _cell(''),
                     _cell(''),
                   ],
                 ),
-                for (final s in byCustomer[customerId]!
-                  ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
-                  pw.TableRow(children: [
-                    _cell(appDateFormat.format(s.saleDate)),
-                    _cell(_productTitleFor(state, s)),
-                    _cell(
-                      _unitPriceFor(state, s) == null
-                          ? ''
-                          : _currency.format(_unitPriceFor(state, s)),
-                      align: pw.TextAlign.right,
-                    ),
-                    _cell('${s.quantity}', align: pw.TextAlign.right),
-                    _cell(_currency.format(remainingFor(s)),
-                        align: pw.TextAlign.right),
-                  ]),
+                for (final s
+                    in byCustomer[customerId]!
+                      ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
+                  pw.TableRow(
+                    children: [
+                      _cell(appDateFormat.format(s.saleDate)),
+                      _cell(_productTitleFor(state, s)),
+                      _cell(
+                        _unitPriceFor(state, s) == null
+                            ? ''
+                            : _currency.format(_unitPriceFor(state, s)),
+                        align: pw.TextAlign.right,
+                      ),
+                      _cell('${s.quantity}', align: pw.TextAlign.right),
+                      _cell(
+                        _currency.format(remainingFor(s)),
+                        align: pw.TextAlign.right,
+                      ),
+                    ],
+                  ),
                 if (byCustomer[customerId]!.length > 1)
-                  pw.TableRow(children: [
-                    _cell(''),
-                    _cell(''),
-                    _cell(''),
-                    _cell('Subtotal', bold: true, align: pw.TextAlign.right),
-                    _cell(
-                      _currency.format(byCustomer[customerId]!
-                          .fold<double>(0, (sum, s) => sum + remainingFor(s))),
-                      bold: true,
-                      align: pw.TextAlign.right,
-                    ),
-                  ]),
+                  pw.TableRow(
+                    children: [
+                      _cell(''),
+                      _cell(''),
+                      _cell(''),
+                      _cell('Subtotal', bold: true, align: pw.TextAlign.right),
+                      _cell(
+                        _currency.format(
+                          byCustomer[customerId]!.fold<double>(
+                            0,
+                            (sum, s) => sum + remainingFor(s),
+                          ),
+                        ),
+                        bold: true,
+                        align: pw.TextAlign.right,
+                      ),
+                    ],
+                  ),
               ],
             ],
           ),

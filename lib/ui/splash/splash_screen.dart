@@ -37,9 +37,7 @@ class _SplashView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFBF3),
-      body: Center(
-        child: Image.asset('assets/images/logo.png', width: 280),
-      ),
+      body: Center(child: Image.asset('assets/images/logo.png', width: 280)),
     );
   }
 }

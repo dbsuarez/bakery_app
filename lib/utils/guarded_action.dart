@@ -13,9 +13,11 @@ Future<void> runGuarded(
     await action();
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(errorMessage?.call(e) ?? 'Something went wrong: $e'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage?.call(e) ?? 'Something went wrong: $e'),
+        ),
+      );
     }
   }
 }

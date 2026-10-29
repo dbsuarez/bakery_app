@@ -35,10 +35,9 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
 
   List<Sale> _unpaidSalesFor(AppState appState) {
     return appState.sales
-        .where((s) =>
-            !s.isDeleted &&
-            !s.paid &&
-            s.saleType == SaleType.customerSale)
+        .where(
+          (s) => !s.isDeleted && !s.paid && s.saleType == SaleType.customerSale,
+        )
         .toList();
   }
 
@@ -48,17 +47,19 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
     final allUnpaid = _unpaidSalesFor(appState);
 
     final batchIdsWithUnpaid = allUnpaid.map((s) => s.batchId).toSet();
-    final batches = appState.batches
-        .where((b) => batchIdsWithUnpaid.contains(b.id))
-        .toList()
-      ..sort((a, b) => b.batchDate.compareTo(a.batchDate));
+    final batches =
+        appState.batches
+            .where((b) => batchIdsWithUnpaid.contains(b.id))
+            .toList()
+          ..sort((a, b) => b.batchDate.compareTo(a.batchDate));
 
     // Default to every batch selected the first time this list is known.
     _selectedBatchIds ??= batchIdsWithUnpaid;
 
-    final selectedUnpaid = allUnpaid
-        .where((s) => _selectedBatchIds!.contains(s.batchId))
-        .where((s) {
+    final selectedUnpaid =
+        allUnpaid.where((s) => _selectedBatchIds!.contains(s.batchId)).where((
+          s,
+        ) {
           if (_filter == _CategoryFilter.all) return true;
           final batch = appState.batchById(s.batchId);
           final category = batch == null
@@ -67,15 +68,13 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
           return _filter == _CategoryFilter.bakery
               ? category == ProductCategory.bakery
               : category == ProductCategory.merchandise;
-        })
-        .toList()
-      ..sort((a, b) {
-        final nameA = appState.customerById(a.customerId)?.name ?? '';
-        final nameB = appState.customerById(b.customerId)?.name ?? '';
-        final byName = nameA.toLowerCase().compareTo(nameB.toLowerCase());
-        if (byName != 0) return byName;
-        return a.saleDate.compareTo(b.saleDate);
-      });
+        }).toList()..sort((a, b) {
+          final nameA = appState.customerById(a.customerId)?.name ?? '';
+          final nameB = appState.customerById(b.customerId)?.name ?? '';
+          final byName = nameA.toLowerCase().compareTo(nameB.toLowerCase());
+          if (byName != 0) return byName;
+          return a.saleDate.compareTo(b.saleDate);
+        });
 
     final byCustomer = <int, List<Sale>>{};
     for (final s in selectedUnpaid) {
@@ -83,8 +82,7 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
     }
     double remainingFor(Sale s) =>
         saleRemainingAmount(s, appState.salePayments);
-    final total =
-        sumMoney(selectedUnpaid.map(remainingFor));
+    final total = sumMoney(selectedUnpaid.map(remainingFor));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unpaid Report')),
@@ -103,7 +101,10 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                   onChanged: (ids) => setState(() => _selectedBatchIds = ids),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: SegmentedButton<_CategoryFilter>(
@@ -128,7 +129,8 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                         ),
                       ],
                       selected: {_filter},
-                      onSelectionChanged: (s) => setState(() => _filter = s.first),
+                      onSelectionChanged: (s) =>
+                          setState(() => _filter = s.first),
                     ),
                   ),
                 ),
@@ -136,14 +138,21 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                 Expanded(
                   child: selectedUnpaid.isEmpty
                       ? const Center(
-                          child: Text('No unpaid transactions in the selected batches.'),
+                          child: Text(
+                            'No unpaid transactions in the selected batches.',
+                          ),
                         )
                       : ListView(
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           children: [
                             for (final entry in byCustomer.entries) ...[
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  4,
+                                ),
                                 child: Text(
                                   appState.customerById(entry.key)?.name ??
                                       'Unknown customer',
@@ -153,36 +162,55 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                               for (final s in entry.value)
                                 ListTile(
                                   dense: true,
-                                  leading: Builder(builder: (context) {
-                                    final batch = appState.batchById(s.batchId);
-                                    final product = batch == null
-                                        ? null
-                                        : appState.productById(batch.productId);
-                                    return ProductAvatar(
-                                        imageUrl: product?.imageUrl, radius: 16);
-                                  }),
+                                  leading: Builder(
+                                    builder: (context) {
+                                      final batch = appState.batchById(
+                                        s.batchId,
+                                      );
+                                      final product = batch == null
+                                          ? null
+                                          : appState.productById(
+                                              batch.productId,
+                                            );
+                                      return ProductAvatar(
+                                        imageUrl: product?.imageUrl,
+                                        radius: 16,
+                                      );
+                                    },
+                                  ),
                                   title: Text(
                                     appState.batchById(s.batchId) != null
                                         ? appState
-                                                .productById(appState
+                                                  .productById(
+                                                    appState
                                                         .batchById(s.batchId)!
-                                                        .productId)
-                                                ?.title ??
-                                            ''
+                                                        .productId,
+                                                  )
+                                                  ?.title ??
+                                              ''
                                         : '',
                                   ),
                                   subtitle: Text(
                                     '${appDateFormat.format(s.saleDate)} · Qty ${s.quantity}',
                                   ),
-                                  trailing: Text(_currency.format(remainingFor(s))),
+                                  trailing: Text(
+                                    _currency.format(remainingFor(s)),
+                                  ),
                                 ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  4,
+                                ),
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: Text(
                                     'Subtotal: ${_currency.format(sumMoney(entry.value.map(remainingFor)))}',
-                                    style: Theme.of(context).textTheme.labelMedium,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelMedium,
                                   ),
                                 ),
                               ),
@@ -199,9 +227,7 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                         Expanded(
                           child: Text(
                             'Total unpaid: ${_currency.format(total)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(color: Colors.orange.shade800),
                           ),
                         ),
@@ -213,7 +239,9 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.picture_as_pdf_outlined),
                           label: const Text('Export PDF'),
@@ -242,8 +270,9 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
       );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -284,8 +313,7 @@ class _BatchSelector extends StatelessWidget {
             child: Row(
               children: [
                 TextButton(
-                  onPressed: () =>
-                      onChanged(batches.map((b) => b.id).toSet()),
+                  onPressed: () => onChanged(batches.map((b) => b.id).toSet()),
                   child: const Text('Select all'),
                 ),
                 TextButton(
@@ -304,8 +332,9 @@ class _BatchSelector extends StatelessWidget {
                     ? {...selected, b.id}
                     : (selected.where((id) => id != b.id).toSet()),
               ),
-              secondary:
-                  ProductAvatar(imageUrl: appState.productById(b.productId)?.imageUrl),
+              secondary: ProductAvatar(
+                imageUrl: appState.productById(b.productId)?.imageUrl,
+              ),
               title: Text(appState.productById(b.productId)?.title ?? '?'),
               subtitle: Text(
                 '${appDateFormat.format(b.batchDate)} · '

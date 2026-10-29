@@ -79,9 +79,9 @@ class CustomerPortalService {
   Uri _portalUri(String token) {
     final configured = SupabaseConfig.customerPortalUrl.trim();
     if (configured.isNotEmpty) {
-      return Uri.parse(configured)
-          .resolve('soa.html')
-          .replace(queryParameters: {'soa': token});
+      return Uri.parse(
+        configured,
+      ).resolve('soa.html').replace(queryParameters: {'soa': token});
     }
     if (kIsWeb) {
       return Uri.base

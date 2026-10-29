@@ -2,6 +2,7 @@ import 'package:bakery_app/analytics/batch_calculations.dart';
 import 'package:bakery_app/analytics/customer_calculations.dart';
 import 'package:bakery_app/analytics/dashboard_analytics.dart';
 import 'package:bakery_app/models/batch.dart';
+import 'package:bakery_app/models/cash_advance.dart';
 import 'package:bakery_app/models/customer.dart';
 import 'package:bakery_app/models/expense.dart';
 import 'package:bakery_app/models/loyalty_adjustment.dart';
@@ -39,6 +40,29 @@ void main() {
       expect(salePaidAmount(1, payments), 50);
       expect(saleRemainingAmount(sale, payments), 50);
       expect(customerBalance(1, [sale], payments), 50);
+    });
+
+    test('cash advances and installments are included in customer balance', () {
+      final advance = CashAdvance(
+        id: 10,
+        customerId: 1,
+        advanceDate: now,
+        amount: 500,
+        updatedAt: now,
+      );
+      final payments = [
+        CashAdvancePayment(
+          id: 11,
+          cashAdvanceId: 10,
+          amount: 125,
+          paymentDate: now,
+          updatedAt: now,
+        ),
+      ];
+
+      expect(cashAdvancePaidAmount(10, payments), 125);
+      expect(cashAdvanceRemainingAmount(advance, payments), 375);
+      expect(customerBalance(1, const [], const [], [advance], payments), 375);
     });
 
     test('overpayment never creates a negative outstanding balance', () {

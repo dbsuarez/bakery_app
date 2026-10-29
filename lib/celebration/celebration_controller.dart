@@ -5,8 +5,9 @@ import 'package:confetti/confetti.dart';
 /// personal-best revenue day/week) - see spec section 12, "Fun UX: ...
 /// meaningful confetti".
 class CelebrationController {
-  final ConfettiController confetti =
-      ConfettiController(duration: const Duration(seconds: 2));
+  final ConfettiController confetti = ConfettiController(
+    duration: const Duration(seconds: 2),
+  );
 
   void celebrate() => confetti.play();
 

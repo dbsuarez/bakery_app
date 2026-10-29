@@ -22,10 +22,11 @@ class PersonalActivityScreen extends StatelessWidget {
         .where((b) => b.isPersonal && !b.isDeleted)
         .map((b) => b.id)
         .toSet();
-    final entries = appState.sales
-        .where((s) => !s.isDeleted && personalBatchIds.contains(s.batchId))
-        .toList()
-      ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
+    final entries =
+        appState.sales
+            .where((s) => !s.isDeleted && personalBatchIds.contains(s.batchId))
+            .toList()
+          ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Personal activity')),
@@ -36,8 +37,9 @@ class PersonalActivityScreen extends StatelessWidget {
               itemBuilder: (context, index) {
                 final sale = entries[index];
                 final batch = appState.batchById(sale.batchId);
-                final product =
-                    batch == null ? null : appState.productById(batch.productId);
+                final product = batch == null
+                    ? null
+                    : appState.productById(batch.productId);
                 return ListTile(
                   title: Text(
                     '${product?.title ?? 'Unknown product'} × ${sale.quantity}',
@@ -53,11 +55,11 @@ class PersonalActivityScreen extends StatelessWidget {
                   onTap: batch == null
                       ? null
                       : () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  BatchDetailScreen(batchId: batch.id),
-                            ),
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                BatchDetailScreen(batchId: batch.id),
                           ),
+                        ),
                 );
               },
             ),

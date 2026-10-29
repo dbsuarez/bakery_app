@@ -61,8 +61,10 @@ Future<Uint8List> buildUnpaidReportPdf(
 
   double remainingFor(Sale s) => saleRemainingAmount(s, state.salePayments);
 
-  final grandTotal =
-      unpaidSales.fold<double>(0, (sum, s) => sum + remainingFor(s));
+  final grandTotal = unpaidSales.fold<double>(
+    0,
+    (sum, s) => sum + remainingFor(s),
+  );
 
   String productTitle(Sale s) {
     final batch = state.batchById(s.batchId);
@@ -128,8 +130,10 @@ Future<Uint8List> buildUnpaidReportPdf(
                     ),
                     pw.Text(
                       appDateTimeFormat.format(now),
-                      style:
-                          const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                      style: const pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColors.grey600,
+                      ),
                     ),
                   ],
                 ),
@@ -174,57 +178,84 @@ Future<Uint8List> buildUnpaidReportPdf(
             children: [
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: brand),
-                children: [
-                  _cell('Date', bold: true),
-                  _cell('Item', bold: true),
-                  _cell('Unit price', bold: true, align: pw.TextAlign.right),
-                  _cell('Qty', bold: true, align: pw.TextAlign.right),
-                  _cell('Amount', bold: true, align: pw.TextAlign.right),
-                ].map((w) => pw.DefaultTextStyle(
-                      style: const pw.TextStyle(color: PdfColors.white),
-                      child: w,
-                    )).toList(),
+                children:
+                    [
+                          _cell('Date', bold: true),
+                          _cell('Item', bold: true),
+                          _cell(
+                            'Unit price',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                          _cell('Qty', bold: true, align: pw.TextAlign.right),
+                          _cell(
+                            'Amount',
+                            bold: true,
+                            align: pw.TextAlign.right,
+                          ),
+                        ]
+                        .map(
+                          (w) => pw.DefaultTextStyle(
+                            style: const pw.TextStyle(color: PdfColors.white),
+                            child: w,
+                          ),
+                        )
+                        .toList(),
               ),
               for (final customerId in customerIds) ...[
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
-                    _cell(state.customerById(customerId)?.name ?? 'Unknown customer',
-                        bold: true),
+                    _cell(
+                      state.customerById(customerId)?.name ??
+                          'Unknown customer',
+                      bold: true,
+                    ),
                     _cell(''),
                     _cell(''),
                     _cell(''),
                     _cell(''),
                   ],
                 ),
-                for (final s in byCustomer[customerId]!
-                  ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
-                  pw.TableRow(children: [
-                    _cell(appDateFormat.format(s.saleDate)),
-                    _cell(productTitle(s)),
-                    _cell(
-                      unitPriceFor(s) == null
-                          ? ''
-                          : _currency.format(unitPriceFor(s)),
-                      align: pw.TextAlign.right,
-                    ),
-                    _cell('${s.quantity}', align: pw.TextAlign.right),
-                    _cell(_currency.format(remainingFor(s)),
-                        align: pw.TextAlign.right),
-                  ]),
+                for (final s
+                    in byCustomer[customerId]!
+                      ..sort((a, b) => a.saleDate.compareTo(b.saleDate)))
+                  pw.TableRow(
+                    children: [
+                      _cell(appDateFormat.format(s.saleDate)),
+                      _cell(productTitle(s)),
+                      _cell(
+                        unitPriceFor(s) == null
+                            ? ''
+                            : _currency.format(unitPriceFor(s)),
+                        align: pw.TextAlign.right,
+                      ),
+                      _cell('${s.quantity}', align: pw.TextAlign.right),
+                      _cell(
+                        _currency.format(remainingFor(s)),
+                        align: pw.TextAlign.right,
+                      ),
+                    ],
+                  ),
                 if (byCustomer[customerId]!.length > 1)
-                  pw.TableRow(children: [
-                    _cell(''),
-                    _cell(''),
-                    _cell(''),
-                    _cell('Subtotal', bold: true, align: pw.TextAlign.right),
-                    _cell(
-                      _currency.format(byCustomer[customerId]!
-                          .fold<double>(0, (sum, s) => sum + remainingFor(s))),
-                      bold: true,
-                      align: pw.TextAlign.right,
-                    ),
-                  ]),
+                  pw.TableRow(
+                    children: [
+                      _cell(''),
+                      _cell(''),
+                      _cell(''),
+                      _cell('Subtotal', bold: true, align: pw.TextAlign.right),
+                      _cell(
+                        _currency.format(
+                          byCustomer[customerId]!.fold<double>(
+                            0,
+                            (sum, s) => sum + remainingFor(s),
+                          ),
+                        ),
+                        bold: true,
+                        align: pw.TextAlign.right,
+                      ),
+                    ],
+                  ),
               ],
             ],
           ),

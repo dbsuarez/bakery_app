@@ -4,6 +4,7 @@ class Customer {
   final String name;
   final String? phone;
   final bool isArchived;
+
   /// Free-text group/location label (e.g. "Office", "Central") - the set of
   /// valid names is configured in Settings, not enforced here. Null means
   /// ungrouped.

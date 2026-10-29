@@ -190,13 +190,15 @@ class _SaleCard extends StatelessWidget {
     final paid = sale['paid'] as bool? ?? false;
     final isSettled = paid || remaining <= 0;
     final date = DateTime.tryParse(sale['sale_date']?.toString() ?? '');
+    final datePaid = DateTime.tryParse(sale['date_paid']?.toString() ?? '');
+    final isCashAdvance = sale['kind'] == 'cash_advance';
     return Card(
       child: ListTile(
         title: Text(sale['product'] as String? ?? 'Order'),
         subtitle: Text(
-          '${date == null ? '' : _date.format(date)} · '
-          '${sale['quantity'] ?? 1} unit(s)\n'
-          '${isSettled ? 'Paid' : '${_money.format(remaining)} remaining'}',
+          '${date == null ? '' : _date.format(date)}'
+          '${isCashAdvance ? '' : ' · ${sale['quantity'] ?? 1} unit(s)'}\n'
+          '${isSettled ? 'Paid${datePaid == null ? '' : ' on ${_date.format(datePaid)}'}' : '${_money.format(remaining)} remaining'}',
         ),
         isThreeLine: true,
         trailing: Column(
@@ -206,7 +208,6 @@ class _SaleCard extends StatelessWidget {
             Text(
               _money.format(amount),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                decoration: isSettled ? TextDecoration.lineThrough : null,
                 color: isSettled
                     ? Theme.of(context).colorScheme.onSurfaceVariant
                     : null,

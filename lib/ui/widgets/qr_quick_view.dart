@@ -14,18 +14,22 @@ Future<void> showQrQuickView(BuildContext context) async {
     files = await listQrPhotos();
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not load QR codes: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not load QR codes: $e')));
     }
     return;
   }
-  final enabled =
-      files.where((f) => business.enabledQrSlots.contains(f.slot)).toList();
+  final enabled = files
+      .where((f) => business.enabledQrSlots.contains(f.slot))
+      .toList();
   if (!context.mounted) return;
   if (enabled.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('No payment QR codes enabled - add some in Settings.'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No payment QR codes enabled - add some in Settings.'),
+      ),
+    );
     return;
   }
   showFullscreenImageGallery(

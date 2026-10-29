@@ -9,6 +9,7 @@ import '../../analytics/payment_events.dart';
 import '../../app_state.dart';
 import '../../customer_portal/customer_portal_link_dialog.dart';
 import '../../models/customer.dart';
+import '../../models/cash_advance.dart';
 import '../../models/customer_credit.dart';
 import '../../models/loyalty_adjustment.dart';
 import '../../models/product.dart';
@@ -134,6 +135,8 @@ class CustomerLedgerScreen extends StatelessWidget {
       customerId,
       appState.sales,
       appState.salePayments,
+      appState.cashAdvances,
+      appState.cashAdvancePayments,
     );
     final creditBalance = customerCreditBalance(
       customerId,
@@ -157,13 +160,14 @@ class CustomerLedgerScreen extends StatelessWidget {
     };
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(customer.name),
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Transactions'),
+              Tab(text: 'Cash advances'),
               Tab(text: 'Payments'),
             ],
           ),
@@ -275,6 +279,7 @@ class CustomerLedgerScreen extends StatelessWidget {
               business,
               pointsByCategory,
             ),
+            _CashAdvancesTab(customerId: customerId),
             _PaymentHistoryTab(customerId: customerId),
           ],
         ),
@@ -1354,19 +1359,26 @@ class CustomerLedgerScreen extends StatelessWidget {
               s.saleType == SaleType.customerSale,
         )
         .toList();
-    if (unpaid.isEmpty) {
+    final unpaidAdvances = appState.cashAdvances
+        .where((a) => a.customerId == customerId && !a.isDeleted && !a.paid)
+        .toList();
+    if (unpaid.isEmpty && unpaidAdvances.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('No unpaid transactions.')));
       return;
     }
-    final totalRemaining = sumMoney(
-      unpaid.map((s) => saleRemainingAmount(s, appState.salePayments)),
-    );
+    final totalRemaining = sumMoney([
+      ...unpaid.map((s) => saleRemainingAmount(s, appState.salePayments)),
+      ...unpaidAdvances.map(
+        (a) => cashAdvanceRemainingAmount(a, appState.cashAdvancePayments),
+      ),
+    ]);
+    final itemCount = unpaid.length + unpaidAdvances.length;
 
     final picked = await pickPaymentDateAndMethod(
       context,
-      helpText: 'Payment for all ${unpaid.length} transaction(s)',
+      helpText: 'Payment for all $itemCount outstanding item(s)',
     );
     if (picked == null || !context.mounted) return;
 
@@ -1375,7 +1387,7 @@ class CustomerLedgerScreen extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Mark all paid?'),
         content: Text(
-          'This marks all ${unpaid.length} unpaid transaction(s) - totaling '
+          'This marks all $itemCount outstanding item(s) - totaling '
           '${_currency.format(totalRemaining)} still owed - as fully paid on '
           '${appDateFormat.format(picked.$1)}.',
         ),
@@ -1397,6 +1409,13 @@ class CustomerLedgerScreen extends StatelessWidget {
     await runGuarded(context, () async {
       for (final sale in unpaid) {
         await repo.markSalePaid(sale.id, picked.$1, paymentMethod: picked.$2);
+      }
+      for (final advance in unpaidAdvances) {
+        await repo.markCashAdvancePaid(
+          advance.id,
+          picked.$1,
+          paymentMethod: picked.$2,
+        );
       }
     });
   }
@@ -1882,6 +1901,297 @@ class _PickCustomerScreenState extends State<_PickCustomerScreen> {
   }
 }
 
+class _CashAdvancesTab extends StatelessWidget {
+  final int customerId;
+  const _CashAdvancesTab({required this.customerId});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final advances =
+        state.cashAdvances
+            .where((a) => a.customerId == customerId && !a.isDeleted)
+            .toList()
+          ..sort((a, b) => b.advanceDate.compareTo(a.advanceDate));
+    final outstanding = sumMoney(
+      advances
+          .where((a) => !a.paid)
+          .map((a) => cashAdvanceRemainingAmount(a, state.cashAdvancePayments)),
+    );
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Outstanding: ${_currency.format(outstanding)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => _editAdvance(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Cash advance'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (advances.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text('No cash advances yet.')),
+          ),
+        for (final advance in advances)
+          Builder(
+            builder: (context) {
+              final paidAmount = cashAdvancePaidAmount(
+                advance.id,
+                state.cashAdvancePayments,
+              );
+              final remaining = cashAdvanceRemainingAmount(
+                advance,
+                state.cashAdvancePayments,
+              );
+              return Card(
+                child: ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.payments)),
+                  title: Text(_currency.format(advance.amount)),
+                  subtitle: Text(
+                    '${appDateFormat.format(advance.advanceDate)}'
+                    '${advance.notes?.trim().isNotEmpty == true ? ' · ${advance.notes}' : ''}\n'
+                    '${advance.paid
+                        ? 'Paid${advance.datePaid == null ? '' : ' on ${appDateFormat.format(advance.datePaid!)}'}'
+                        : paidAmount > 0
+                        ? '${_currency.format(paidAmount)} paid · ${_currency.format(remaining)} remaining'
+                        : 'Unpaid'}',
+                  ),
+                  isThreeLine: true,
+                  trailing: advance.paid
+                      ? Switch(
+                          value: true,
+                          onChanged: (_) => runGuarded(
+                            context,
+                            () => context
+                                .read<BakeryRepository>()
+                                .markCashAdvanceUnpaid(advance.id),
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: () =>
+                              _recordPayment(context, advance, remaining),
+                          child: Text(_currency.format(remaining)),
+                        ),
+                  onLongPress: () => _showActions(context, advance),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Future<void> _editAdvance(
+    BuildContext context, [
+    CashAdvance? existing,
+  ]) async {
+    var date = existing?.advanceDate ?? DateTime.now();
+    final amount = TextEditingController(
+      text: existing?.amount.toStringAsFixed(2) ?? '',
+    );
+    final notes = TextEditingController(text: existing?.notes ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            existing == null ? 'Add cash advance' : 'Edit cash advance',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Date: ${appDateFormat.format(date)}'),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: date,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setDialogState(() => date = picked);
+                },
+              ),
+              TextField(
+                controller: amount,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Amount'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: notes,
+                decoration: const InputDecoration(
+                  labelText: 'Notes (optional)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final value = double.tryParse(amount.text);
+    if (value == null || value <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid amount.')));
+      return;
+    }
+    final advance = CashAdvance(
+      id: existing?.id ?? 0,
+      remoteId: existing?.remoteId,
+      customerId: customerId,
+      advanceDate: date,
+      amount: value,
+      paid: existing?.paid ?? false,
+      datePaid: existing?.datePaid,
+      paymentMethod: existing?.paymentMethod,
+      notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+      updatedAt: DateTime.now(),
+    );
+    await runGuarded(
+      context,
+      () => existing == null
+          ? context.read<BakeryRepository>().createCashAdvance(advance)
+          : context.read<BakeryRepository>().updateCashAdvance(advance),
+    );
+  }
+
+  Future<void> _recordPayment(
+    BuildContext context,
+    CashAdvance advance,
+    double remaining,
+  ) async {
+    final picked = await pickPaymentDateAndMethod(
+      context,
+      helpText: 'Cash advance payment',
+    );
+    if (picked == null || !context.mounted) return;
+    final amount = TextEditingController(text: remaining.toStringAsFixed(2));
+    final notes = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Record payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amount,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Amount',
+                helperText: '${_currency.format(remaining)} remaining',
+              ),
+            ),
+            TextField(
+              controller: notes,
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Record'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final value = double.tryParse(amount.text);
+    if (value == null ||
+        value <= 0 ||
+        toCentavos(value) > toCentavos(remaining)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Enter an amount up to ${_currency.format(remaining)}.',
+          ),
+        ),
+      );
+      return;
+    }
+    await runGuarded(
+      context,
+      () => context.read<BakeryRepository>().addCashAdvancePayment(
+        CashAdvancePayment(
+          id: 0,
+          cashAdvanceId: advance.id,
+          amount: value,
+          paymentDate: picked.$1,
+          paymentMethod: picked.$2,
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showActions(BuildContext context, CashAdvance advance) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'edit') await _editAdvance(context, advance);
+    if (action == 'delete' && context.mounted) {
+      await runGuarded(
+        context,
+        () => context.read<BakeryRepository>().deleteCashAdvance(advance.id),
+      );
+    }
+  }
+}
+
 class _PaymentHistoryTab extends StatelessWidget {
   final int customerId;
   const _PaymentHistoryTab({required this.customerId});
@@ -1895,12 +2205,43 @@ class _PaymentHistoryTab extends StatelessWidget {
             appState.salePayments,
           ).where((p) => p.customerId == customerId).toList()
           ..sort((a, b) => b.date.compareTo(a.date));
+    final customerAdvances = appState.cashAdvances
+        .where((a) => a.customerId == customerId && !a.isDeleted)
+        .toList();
+    final advanceById = {for (final a in customerAdvances) a.id: a};
+    final cashPayments =
+        <({DateTime date, double amount, String? method, String? notes})>[
+          for (final payment in appState.cashAdvancePayments)
+            if (!payment.isDeleted &&
+                advanceById.containsKey(payment.cashAdvanceId))
+              (
+                date: payment.paymentDate,
+                amount: payment.amount,
+                method: payment.paymentMethod,
+                notes: payment.notes,
+              ),
+          for (final advance in customerAdvances)
+            if (advance.paid &&
+                advance.datePaid != null &&
+                !appState.cashAdvancePayments.any(
+                  (p) => p.cashAdvanceId == advance.id && !p.isDeleted,
+                ))
+              (
+                date: advance.datePaid!,
+                amount: advance.amount,
+                method: advance.paymentMethod,
+                notes: advance.notes,
+              ),
+        ]..sort((a, b) => b.date.compareTo(a.date));
 
-    if (payments.isEmpty) {
+    if (payments.isEmpty && cashPayments.isEmpty) {
       return const Center(child: Text('No payments recorded yet.'));
     }
 
-    final total = sumMoney(payments.map((p) => p.amount));
+    final total = sumMoney([
+      ...payments.map((p) => p.amount),
+      ...cashPayments.map((p) => p.amount),
+    ]);
     final paymentsByDate = <DateTime, List<PaymentEvent>>{};
     for (final payment in payments) {
       final day = DateTime(
@@ -1915,7 +2256,7 @@ class _PaymentHistoryTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          '${payments.length} payment(s) · Total: ${_currency.format(total)}',
+          '${payments.length + cashPayments.length} payment(s) · Total: ${_currency.format(total)}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -1968,6 +2309,29 @@ class _PaymentHistoryTab extends StatelessWidget {
               },
             ),
           const SizedBox(height: 12),
+        ],
+        if (cashPayments.isNotEmpty) ...[
+          Text(
+            'Cash advance payments',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          for (final payment in cashPayments)
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.payments_outlined)),
+              title: const Text('Cash advance'),
+              subtitle: Text(
+                '${appDateFormat.format(payment.date)}'
+                '${payment.method == null ? '' : ' · via ${payment.method}'}',
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NoteIndicator(note: payment.notes),
+                  Text(_currency.format(payment.amount)),
+                ],
+              ),
+            ),
         ],
       ],
     );

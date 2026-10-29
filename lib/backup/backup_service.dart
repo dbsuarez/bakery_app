@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
 import '../models/batch.dart';
+import '../models/cash_advance.dart';
 import '../models/customer.dart';
 import '../models/customer_credit.dart';
 import '../models/customer_favorite.dart';
@@ -57,6 +58,8 @@ String buildBackupJson(AppState state) {
     expenses: state.expenses,
     customerFavorites: state.customerFavorites,
     favoriteDismissals: state.favoriteDismissals,
+    cashAdvances: state.cashAdvances,
+    cashAdvancePayments: state.cashAdvancePayments,
   );
   return const JsonEncoder.withIndent('  ').convert(data);
 }
@@ -74,11 +77,14 @@ Map<String, dynamic> buildBackupDocument({
   List<Expense> expenses = const [],
   List<CustomerFavorite> customerFavorites = const [],
   List<FavoriteDismissal> favoriteDismissals = const [],
+  List<CashAdvance> cashAdvances = const [],
+  List<CashAdvancePayment> cashAdvancePayments = const [],
 }) {
   final productIds = products.map((row) => row.id).toSet();
   final customerIds = customers.map((row) => row.id).toSet();
   final batchIds = batches.map((row) => row.id).toSet();
   final saleIds = sales.map((row) => row.id).toSet();
+  final cashAdvanceIds = cashAdvances.map((row) => row.id).toSet();
 
   // A parent may be soft-deleted while a dependent ledger/preference row is
   // still live. Snapshot reads intentionally omit deleted parents, so omit
@@ -120,6 +126,11 @@ Map<String, dynamic> buildBackupDocument({
     'customer_favorites': validFavorites.map(_customerFavoriteToJson).toList(),
     'favorite_dismissals': validDismissals
         .map(_favoriteDismissalToJson)
+        .toList(),
+    'cash_advances': cashAdvances.map(_cashAdvanceToJson).toList(),
+    'cash_advance_payments': cashAdvancePayments
+        .where((row) => cashAdvanceIds.contains(row.cashAdvanceId))
+        .map(_cashAdvancePaymentToJson)
         .toList(),
   };
 }
@@ -374,4 +385,28 @@ Map<String, dynamic> _customerFavoriteToJson(CustomerFavorite f) => {
 Map<String, dynamic> _favoriteDismissalToJson(FavoriteDismissal d) => {
   'customer_id': d.customerId,
   'batch_id': d.batchId,
+};
+
+Map<String, dynamic> _cashAdvanceToJson(CashAdvance a) => {
+  'id': a.id,
+  'remote_id': a.remoteId,
+  'customer_id': a.customerId,
+  'advance_date': a.advanceDate.toIso8601String(),
+  'amount': a.amount,
+  'paid': a.paid,
+  'date_paid': a.datePaid?.toIso8601String(),
+  'payment_method': a.paymentMethod,
+  'notes': a.notes,
+  'updated_at': a.updatedAt.toIso8601String(),
+};
+
+Map<String, dynamic> _cashAdvancePaymentToJson(CashAdvancePayment p) => {
+  'id': p.id,
+  'remote_id': p.remoteId,
+  'cash_advance_id': p.cashAdvanceId,
+  'amount': p.amount,
+  'payment_date': p.paymentDate.toIso8601String(),
+  'payment_method': p.paymentMethod,
+  'notes': p.notes,
+  'updated_at': p.updatedAt.toIso8601String(),
 };

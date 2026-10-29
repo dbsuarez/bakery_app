@@ -21,10 +21,7 @@ class AuthGate extends StatelessWidget {
         }
         final lockService = context.watch<AppLockService?>();
         if (lockService != null) {
-          return AppLockGate(
-            lockService: lockService,
-            child: const AppShell(),
-          );
+          return AppLockGate(lockService: lockService, child: const AppShell());
         }
         return const AppShell();
       },

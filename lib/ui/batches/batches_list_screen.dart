@@ -170,9 +170,7 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
         )
         .toList();
     final selectedTotal = sumMoney(
-      selectedBatches.map(
-        (batch) => batchRevenue(batch.id, appState.sales),
-      ),
+      selectedBatches.map((batch) => batchRevenue(batch.id, appState.sales)),
     );
     final visibleSelectableIds = batches
         .where(_isSelectable)

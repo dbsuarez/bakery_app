@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import 'models/batch.dart';
+import 'models/cash_advance.dart';
 import 'models/customer.dart';
 import 'models/customer_credit.dart';
 import 'models/customer_favorite.dart';
@@ -28,6 +29,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   List<CustomerCredit> customerCredits = [];
   List<FavoriteDismissal> favoriteDismissals = [];
   List<Expense> expenses = [];
+  List<CashAdvance> cashAdvances = [];
+  List<CashAdvancePayment> cashAdvancePayments = [];
 
   late final StreamSubscription _productsSub;
   late final StreamSubscription _customersSub;
@@ -39,6 +42,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   late final StreamSubscription _customerCreditsSub;
   late final StreamSubscription _favoriteDismissalsSub;
   late final StreamSubscription _expensesSub;
+  late final StreamSubscription _cashAdvancesSub;
+  late final StreamSubscription _cashAdvancePaymentsSub;
 
   AppState(this.repository) {
     WidgetsBinding.instance.addObserver(this);
@@ -80,6 +85,14 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     });
     _expensesSub = repository.watchExpenses().listen((v) {
       expenses = v;
+      notifyListeners();
+    });
+    _cashAdvancesSub = repository.watchCashAdvances().listen((v) {
+      cashAdvances = v;
+      notifyListeners();
+    });
+    _cashAdvancePaymentsSub = repository.watchCashAdvancePayments().listen((v) {
+      cashAdvancePayments = v;
       notifyListeners();
     });
   }
@@ -143,6 +156,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _customerCreditsSub.cancel();
     _favoriteDismissalsSub.cancel();
     _expensesSub.cancel();
+    _cashAdvancesSub.cancel();
+    _cashAdvancePaymentsSub.cancel();
     super.dispose();
   }
 }

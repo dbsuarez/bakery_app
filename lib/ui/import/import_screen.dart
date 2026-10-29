@@ -33,8 +33,9 @@ class _ImportScreenState extends State<ImportScreen> {
     });
 
     try {
-      final report = await ImportService(Supabase.instance.client)
-          .importWorkbook(result.files.single.bytes!);
+      final report = await ImportService(
+        Supabase.instance.client,
+      ).importWorkbook(result.files.single.bytes!);
       setState(() => _report = report);
     } catch (e) {
       setState(() => _error = '$e');
@@ -70,7 +71,10 @@ class _ImportScreenState extends State<ImportScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 16),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
           if (_report != null) ...[
             const SizedBox(height: 24),
@@ -100,19 +104,25 @@ class _ReportSummary extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Products created: ${report.productsCreated}'),
             Text('Customers created: ${report.customersCreated}'),
-            Text('Batches: ${report.batchesCreated} created, '
-                '${report.batchesUpdated} updated, '
-                '${report.batchesUnchanged} unchanged'),
-            Text('Transactions: ${report.salesCreated} created, '
-                '${report.salesUpdated} updated, '
-                '${report.salesUnchanged} unchanged'),
+            Text(
+              'Batches: ${report.batchesCreated} created, '
+              '${report.batchesUpdated} updated, '
+              '${report.batchesUnchanged} unchanged',
+            ),
+            Text(
+              'Transactions: ${report.salesCreated} created, '
+              '${report.salesUpdated} updated, '
+              '${report.salesUnchanged} unchanged',
+            ),
             const SizedBox(height: 4),
-            Text('${report.issues.length} issue(s) flagged for review',
-                style: TextStyle(
-                  color: report.issues.isEmpty
-                      ? Colors.green
-                      : Theme.of(context).colorScheme.error,
-                )),
+            Text(
+              '${report.issues.length} issue(s) flagged for review',
+              style: TextStyle(
+                color: report.issues.isEmpty
+                    ? Colors.green
+                    : Theme.of(context).colorScheme.error,
+              ),
+            ),
           ],
         ),
       ),
@@ -168,10 +178,7 @@ class _ReportIssues extends StatelessWidget {
                 ),
                 children: [
                   for (final issue in report.forCategory(category))
-                    ListTile(
-                      dense: true,
-                      title: Text(issue.message),
-                    ),
+                    ListTile(dense: true, title: Text(issue.message)),
                 ],
               ),
             ),

@@ -28,7 +28,9 @@ begin
       ('customer_credits',      'credit_date',     'desc', true),
       ('customer_favorites',    'created_at',      'desc', false),
       ('favorite_dismissals',   'created_at',      'desc', false),
-      ('expenses',              'expense_date',    'desc', true)
+      ('expenses',              'expense_date',    'desc', true),
+      ('cash_advances',         'advance_date',    'desc', true),
+      ('cash_advance_payments', 'payment_date',    'desc', true)
     ) as tables(table_name, order_column, order_direction, filter_deleted)
   loop
     begin

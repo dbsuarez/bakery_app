@@ -128,8 +128,10 @@ ParsedWorkbook parseBakeryWorkbook(Uint8List bytes, ImportReport report) {
     }
   }
   if (productBlankRows > 0) {
-    report.add(ImportIssueCategory.blankRowsSkipped,
-        '$productBlankRows blank row(s) skipped in tblProduct');
+    report.add(
+      ImportIssueCategory.blankRowsSkipped,
+      '$productBlankRows blank row(s) skipped in tblProduct',
+    );
   }
 
   final customers = <ParsedCustomer>[];
@@ -146,8 +148,10 @@ ParsedWorkbook parseBakeryWorkbook(Uint8List bytes, ImportReport report) {
     }
   }
   if (customerBlankRows > 0) {
-    report.add(ImportIssueCategory.blankRowsSkipped,
-        '$customerBlankRows blank row(s) skipped in tblCustomers');
+    report.add(
+      ImportIssueCategory.blankRowsSkipped,
+      '$customerBlankRows blank row(s) skipped in tblCustomers',
+    );
   }
 
   final batches = <ParsedBatch>[];
@@ -162,20 +166,24 @@ ParsedWorkbook parseBakeryWorkbook(Uint8List bytes, ImportReport report) {
         remittanceBlankRows++;
         continue;
       }
-      batches.add(ParsedBatch(
-        legacyId: legacyId,
-        date: _asDate(_cell(row, 1)),
-        productName: productName,
-        count: _asDouble(_cell(row, 3)),
-        price: _asDouble(_cell(row, 4)),
-        remitted: _asBool(_cell(row, 6)),
-        dateRemitted: _asDate(_cell(row, 7)),
-      ));
+      batches.add(
+        ParsedBatch(
+          legacyId: legacyId,
+          date: _asDate(_cell(row, 1)),
+          productName: productName,
+          count: _asDouble(_cell(row, 3)),
+          price: _asDouble(_cell(row, 4)),
+          remitted: _asBool(_cell(row, 6)),
+          dateRemitted: _asDate(_cell(row, 7)),
+        ),
+      );
     }
   }
   if (remittanceBlankRows > 0) {
-    report.add(ImportIssueCategory.blankRowsSkipped,
-        '$remittanceBlankRows blank row(s) skipped in tblRemittance');
+    report.add(
+      ImportIssueCategory.blankRowsSkipped,
+      '$remittanceBlankRows blank row(s) skipped in tblRemittance',
+    );
   }
 
   final sales = <ParsedSale>[];
@@ -191,20 +199,24 @@ ParsedWorkbook parseBakeryWorkbook(Uint8List bytes, ImportReport report) {
         transactionBlankRows++;
         continue;
       }
-      sales.add(ParsedSale(
-        legacyId: legacyId,
-        batchLegacyId: batchLegacyId,
-        date: _asDate(_cell(row, 2)),
-        customerName: customerName,
-        amount: _asDouble(_cell(row, 5)),
-        paid: _asBool(_cell(row, 6)),
-        datePaid: _asDate(_cell(row, 7)),
-      ));
+      sales.add(
+        ParsedSale(
+          legacyId: legacyId,
+          batchLegacyId: batchLegacyId,
+          date: _asDate(_cell(row, 2)),
+          customerName: customerName,
+          amount: _asDouble(_cell(row, 5)),
+          paid: _asBool(_cell(row, 6)),
+          datePaid: _asDate(_cell(row, 7)),
+        ),
+      );
     }
   }
   if (transactionBlankRows > 0) {
-    report.add(ImportIssueCategory.blankRowsSkipped,
-        '$transactionBlankRows blank row(s) skipped in tblTransactions');
+    report.add(
+      ImportIssueCategory.blankRowsSkipped,
+      '$transactionBlankRows blank row(s) skipped in tblTransactions',
+    );
   }
 
   return ParsedWorkbook(

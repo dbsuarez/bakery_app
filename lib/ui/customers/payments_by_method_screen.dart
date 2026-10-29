@@ -41,9 +41,9 @@ class _PaymentsByMethodScreenState extends State<PaymentsByMethodScreen> {
     }
     final methods = byMethod.keys.toList()
       ..sort(
-        (a, b) => sumMoney(byMethod[b]!.map((e) => e.amount)).compareTo(
-          sumMoney(byMethod[a]!.map((e) => e.amount)),
-        ),
+        (a, b) => sumMoney(
+          byMethod[b]!.map((e) => e.amount),
+        ).compareTo(sumMoney(byMethod[a]!.map((e) => e.amount))),
       );
     final grandTotal = sumMoney(events.map((e) => e.amount));
 

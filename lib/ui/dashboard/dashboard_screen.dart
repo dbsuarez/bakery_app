@@ -59,6 +59,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       batches: appState.batches,
       sales: appState.sales,
       salePayments: appState.salePayments,
+      cashAdvances: appState.cashAdvances,
+      cashAdvancePayments: appState.cashAdvancePayments,
       expenses: appState.expenses,
     );
 

@@ -33,49 +33,61 @@ class _LoyaltyPointsScreenState extends State<LoyaltyPointsScreen> {
     final appState = context.watch<AppState>();
     final business = context.watch<BusinessSettingsController>();
 
-    final entries = normalCustomers(appState.customers)
-        .where((c) => c.name.toLowerCase().contains(_search.toLowerCase()))
-        .map((c) => (
-              customer: c,
-              bakeryPoints: customerPointsBalance(
-                c.id,
-                appState.sales,
-                appState.batches,
-                appState.products,
-                appState.loyaltyAdjustments,
-                category: ProductCategory.bakery,
-                pesosPerPoint: business.pesosPerPoint,
-                sameDayBonusPercent: business.sameDayBonusPercent,
-                redeemPesosPerPoint: business.redeemPesosPerPoint,
-                sameDayBonusStartDate: business.sameDayBonusStartDate,
+    final entries =
+        normalCustomers(appState.customers)
+            .where((c) => c.name.toLowerCase().contains(_search.toLowerCase()))
+            .map(
+              (c) => (
+                customer: c,
+                bakeryPoints: customerPointsBalance(
+                  c.id,
+                  appState.sales,
+                  appState.batches,
+                  appState.products,
+                  appState.loyaltyAdjustments,
+                  category: ProductCategory.bakery,
+                  pesosPerPoint: business.pesosPerPoint,
+                  sameDayBonusPercent: business.sameDayBonusPercent,
+                  redeemPesosPerPoint: business.redeemPesosPerPoint,
+                  sameDayBonusStartDate: business.sameDayBonusStartDate,
+                ),
+                merchandisePoints: customerPointsBalance(
+                  c.id,
+                  appState.sales,
+                  appState.batches,
+                  appState.products,
+                  appState.loyaltyAdjustments,
+                  category: ProductCategory.merchandise,
+                  pesosPerPoint: business.pesosPerPoint,
+                  sameDayBonusPercent: business.sameDayBonusPercent,
+                  redeemPesosPerPoint: business.redeemPesosPerPoint,
+                  sameDayBonusStartDate: business.sameDayBonusStartDate,
+                ),
               ),
-              merchandisePoints: customerPointsBalance(
-                c.id,
-                appState.sales,
-                appState.batches,
-                appState.products,
-                appState.loyaltyAdjustments,
-                category: ProductCategory.merchandise,
-                pesosPerPoint: business.pesosPerPoint,
-                sameDayBonusPercent: business.sameDayBonusPercent,
-                redeemPesosPerPoint: business.redeemPesosPerPoint,
-                sameDayBonusStartDate: business.sameDayBonusStartDate,
+            )
+            .where(
+              (e) => switch (_filter) {
+                _CategoryFilter.all =>
+                  e.bakeryPoints > 0 || e.merchandisePoints > 0,
+                _CategoryFilter.bakery => e.bakeryPoints > 0,
+                _CategoryFilter.merchandise => e.merchandisePoints > 0,
+              },
+            )
+            .toList()
+          ..sort(
+            (a, b) => switch (_filter) {
+              _CategoryFilter.all =>
+                (b.bakeryPoints + b.merchandisePoints).compareTo(
+                  a.bakeryPoints + a.merchandisePoints,
+                ),
+              _CategoryFilter.bakery => b.bakeryPoints.compareTo(
+                a.bakeryPoints,
               ),
-            ))
-        .where((e) => switch (_filter) {
-              _CategoryFilter.all => e.bakeryPoints > 0 || e.merchandisePoints > 0,
-              _CategoryFilter.bakery => e.bakeryPoints > 0,
-              _CategoryFilter.merchandise => e.merchandisePoints > 0,
-            })
-        .toList()
-      ..sort((a, b) => switch (_filter) {
-            _CategoryFilter.all => (b.bakeryPoints + b.merchandisePoints)
-                .compareTo(a.bakeryPoints + a.merchandisePoints),
-            _CategoryFilter.bakery =>
-              b.bakeryPoints.compareTo(a.bakeryPoints),
-            _CategoryFilter.merchandise =>
-              b.merchandisePoints.compareTo(a.merchandisePoints),
-          });
+              _CategoryFilter.merchandise => b.merchandisePoints.compareTo(
+                a.merchandisePoints,
+              ),
+            },
+          );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Loyalty Points')),
@@ -148,15 +160,13 @@ class _LoyaltyPointsScreenState extends State<LoyaltyPointsScreen> {
           Expanded(
             child: entries.isEmpty
                 ? Center(
-                    child: Text(
-                      switch (_filter) {
-                        _CategoryFilter.all => 'No customers with points yet.',
-                        _CategoryFilter.bakery =>
-                          'No customers with bakery points yet.',
-                        _CategoryFilter.merchandise =>
-                          'No customers with merchandise points yet.',
-                      },
-                    ),
+                    child: Text(switch (_filter) {
+                      _CategoryFilter.all => 'No customers with points yet.',
+                      _CategoryFilter.bakery =>
+                        'No customers with bakery points yet.',
+                      _CategoryFilter.merchandise =>
+                        'No customers with merchandise points yet.',
+                    }),
                   )
                 : ListView.builder(
                     itemCount: entries.length,
@@ -179,26 +189,22 @@ class _LoyaltyPointsScreenState extends State<LoyaltyPointsScreen> {
                                 e.bakeryPoints > 0)
                               Text(
                                 'Bakery: ${e.bakeryPoints} pts',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
+                                style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: Colors.amber.shade800),
                               ),
                             if (_filter != _CategoryFilter.bakery &&
                                 e.merchandisePoints > 0)
                               Text(
                                 'Merch: ${e.merchandisePoints} pts',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
+                                style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: Colors.amber.shade800),
                               ),
                           ],
                         ),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => CustomerLedgerScreen(
-                                customerId: e.customer.id),
+                            builder: (_) =>
+                                CustomerLedgerScreen(customerId: e.customer.id),
                           ),
                         ),
                       );

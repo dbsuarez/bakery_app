@@ -53,8 +53,9 @@ class BusinessSettingsController extends ChangeNotifier {
     // The provider is created at app boot, before sign-in completes, so the
     // initial load() below usually finds no user yet - reload whenever the
     // auth state changes (sign-in, session restore, metadata update).
-    _authSub =
-        Supabase.instance.client.auth.onAuthStateChange.listen((_) => load());
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen(
+      (_) => load(),
+    );
   }
 
   /// Re-fetches the user from Supabase (not the locally cached session) so
@@ -73,10 +74,12 @@ class BusinessSettingsController extends ChangeNotifier {
       final customerGroupsVal = meta?[_kCustomerGroupsKey];
       final paymentMethodsVal = meta?[_kPaymentMethodsKey];
       final enabledQrSlotsVal = meta?[_kEnabledQrSlotsKey];
-      final resolvedName =
-          (nameVal is String && nameVal.trim().isNotEmpty) ? nameVal : defaultName;
-      final resolvedPpp =
-          (pppVal is num && pppVal > 0) ? pppVal.toDouble() : defaultPesosPerPoint;
+      final resolvedName = (nameVal is String && nameVal.trim().isNotEmpty)
+          ? nameVal
+          : defaultName;
+      final resolvedPpp = (pppVal is num && pppVal > 0)
+          ? pppVal.toDouble()
+          : defaultPesosPerPoint;
       final resolvedBonus = (bonusVal is num && bonusVal >= 0)
           ? bonusVal.toDouble()
           : defaultSameDayBonusPercent;
@@ -165,7 +168,9 @@ class BusinessSettingsController extends ChangeNotifier {
         .where((m) => m.isNotEmpty)
         .toSet()
         .toList();
-    _paymentMethods = cleaned.isEmpty ? List.of(defaultPaymentMethods) : cleaned;
+    _paymentMethods = cleaned.isEmpty
+        ? List.of(defaultPaymentMethods)
+        : cleaned;
     notifyListeners();
     await _saveMetadata();
   }
@@ -181,16 +186,18 @@ class BusinessSettingsController extends ChangeNotifier {
   // this keeps all keys consistent either way.
   Future<void> _saveMetadata() async {
     await Supabase.instance.client.auth.updateUser(
-      UserAttributes(data: {
-        _kNameKey: _name,
-        _kPesosPerPointKey: _pesosPerPoint,
-        _kSameDayBonusKey: _sameDayBonusPercent,
-        _kRedeemPesosPerPointKey: _redeemPesosPerPoint,
-        _kSameDayBonusStartDateKey: _sameDayBonusStartDate.toIso8601String(),
-        _kCustomerGroupsKey: _customerGroups,
-        _kPaymentMethodsKey: _paymentMethods,
-        _kEnabledQrSlotsKey: _enabledQrSlots,
-      }),
+      UserAttributes(
+        data: {
+          _kNameKey: _name,
+          _kPesosPerPointKey: _pesosPerPoint,
+          _kSameDayBonusKey: _sameDayBonusPercent,
+          _kRedeemPesosPerPointKey: _redeemPesosPerPoint,
+          _kSameDayBonusStartDateKey: _sameDayBonusStartDate.toIso8601String(),
+          _kCustomerGroupsKey: _customerGroups,
+          _kPaymentMethodsKey: _paymentMethods,
+          _kEnabledQrSlotsKey: _enabledQrSlots,
+        },
+      ),
     );
   }
 

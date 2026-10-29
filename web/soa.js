@@ -44,11 +44,25 @@ function renderTransaction(sale) {
   card.className = 'transaction';
 
   const details = document.createElement('div');
+  const payments = Array.isArray(sale.payments) ? sale.payments : [];
+  const paidDate = sale.date_paid || payments.at(-1)?.date;
+  const itemDetails = sale.kind === 'cash_advance'
+    ? formatDate(sale.sale_date)
+    : `${formatDate(sale.sale_date)} · ${sale.quantity || 1} unit(s)`;
   details.append(
     textElement('h3', '', sale.product || 'Order'),
-    textElement('p', '', `${formatDate(sale.sale_date)} · ${sale.quantity || 1} unit(s)`),
-    textElement('p', '', settled ? 'Paid' : `${money.format(remaining)} remaining`),
+    textElement('p', '', itemDetails),
+    textElement('p', '', settled
+      ? `Paid${paidDate ? ` on ${formatDate(paidDate)}` : ''}`
+      : `${money.format(remaining)} remaining`),
   );
+  if (!settled && payments.length) {
+    details.append(textElement(
+      'p',
+      'payment-dates',
+      `Payments: ${payments.map((payment) => `${money.format(Number(payment.amount || 0))} on ${formatDate(payment.date)}`).join(', ')}`,
+    ));
+  }
 
   const amount = document.createElement('div');
   amount.className = `amount${settled ? ' paid' : ''}`;

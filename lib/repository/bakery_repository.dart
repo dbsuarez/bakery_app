@@ -1,4 +1,5 @@
 import '../models/batch.dart';
+import '../models/cash_advance.dart';
 import '../models/customer.dart';
 import '../models/customer_credit.dart';
 import '../models/customer_favorite.dart';
@@ -22,6 +23,8 @@ abstract class BakeryRepository {
   Stream<List<CustomerCredit>> watchCustomerCredits();
   Stream<List<FavoriteDismissal>> watchFavoriteDismissals();
   Stream<List<Expense>> watchExpenses();
+  Stream<List<CashAdvance>> watchCashAdvances();
+  Stream<List<CashAdvancePayment>> watchCashAdvancePayments();
 
   Future<void> createProduct(Product product);
   Future<void> createCustomer(Customer customer);
@@ -75,6 +78,16 @@ abstract class BakeryRepository {
   /// any prior payments) now covers the sale's full amount, the sale is
   /// automatically flipped to paid with this payment's date.
   Future<void> addSalePayment(SalePayment payment);
+  Future<void> createCashAdvance(CashAdvance cashAdvance);
+  Future<void> updateCashAdvance(CashAdvance cashAdvance);
+  Future<void> deleteCashAdvance(int cashAdvanceId);
+  Future<void> addCashAdvancePayment(CashAdvancePayment payment);
+  Future<void> markCashAdvancePaid(
+    int cashAdvanceId,
+    DateTime paymentDate, {
+    String? paymentMethod,
+  });
+  Future<void> markCashAdvanceUnpaid(int cashAdvanceId);
 
   /// Records a customer credit ledger entry - positive to grant credit
   /// (e.g. an overpayment), negative to consume it (applied to a purchase
