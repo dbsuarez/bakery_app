@@ -192,13 +192,14 @@ class _SaleCard extends StatelessWidget {
     final date = DateTime.tryParse(sale['sale_date']?.toString() ?? '');
     final datePaid = DateTime.tryParse(sale['date_paid']?.toString() ?? '');
     final isCashAdvance = sale['kind'] == 'cash_advance';
+    final paymentMethod = sale['payment_method'] as String?;
     return Card(
       child: ListTile(
         title: Text(sale['product'] as String? ?? 'Order'),
         subtitle: Text(
           '${date == null ? '' : _date.format(date)}'
           '${isCashAdvance ? '' : ' · ${sale['quantity'] ?? 1} unit(s)'}\n'
-          '${isSettled ? 'Paid${datePaid == null ? '' : ' on ${_date.format(datePaid)}'}' : '${_money.format(remaining)} remaining'}',
+          '${isSettled ? 'Paid${datePaid == null ? '' : ' on ${_date.format(datePaid)}'}${paymentMethod?.isNotEmpty == true ? ' via $paymentMethod' : ''}' : '${_money.format(remaining)} remaining'}',
         ),
         isThreeLine: true,
         trailing: Column(

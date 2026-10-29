@@ -46,6 +46,7 @@ function renderTransaction(sale) {
   const details = document.createElement('div');
   const payments = Array.isArray(sale.payments) ? sale.payments : [];
   const paidDate = sale.date_paid || payments.at(-1)?.date;
+  const paymentMethod = sale.payment_method || payments.at(-1)?.method;
   const itemDetails = sale.kind === 'cash_advance'
     ? formatDate(sale.sale_date)
     : `${formatDate(sale.sale_date)} · ${sale.quantity || 1} unit(s)`;
@@ -53,7 +54,7 @@ function renderTransaction(sale) {
     textElement('h3', '', sale.product || 'Order'),
     textElement('p', '', itemDetails),
     textElement('p', '', settled
-      ? `Paid${paidDate ? ` on ${formatDate(paidDate)}` : ''}`
+      ? `Paid${paidDate ? ` on ${formatDate(paidDate)}` : ''}${paymentMethod ? ` via ${paymentMethod}` : ''}`
       : `${money.format(remaining)} remaining`),
   );
   if (!settled && payments.length) {
