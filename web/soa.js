@@ -96,6 +96,7 @@ function render(data) {
   const balance = Number(data.balance || 0);
   const sales = Array.isArray(data.sales) ? data.sales : [];
   const qrPaths = Array.isArray(data.qr_paths) ? data.qr_paths : [];
+  const qrLabels = Array.isArray(data.qr_labels) ? data.qr_labels : [];
 
   document.title = `${businessName} · Statement of Account`;
   document.querySelector('#business-name').textContent = businessName;
@@ -139,7 +140,10 @@ function render(data) {
     paymentSection.hidden = false;
     const qrList = content.querySelector('#qr-list');
     if (qrPaths.length) {
-      qrPaths.forEach((path, index) => qrList.append(renderQr(publicQrUrl(path), `Payment option ${index + 1}`)));
+      qrPaths.forEach((path, index) => qrList.append(renderQr(
+        publicQrUrl(path),
+        qrLabels[index] || `Payment option ${index + 1}`,
+      )));
     } else {
       qrList.append(renderQr('assets/assets/images/qr_maribank.jpg', 'Payment QR'));
     }

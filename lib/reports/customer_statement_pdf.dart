@@ -19,6 +19,13 @@ import '../utils/money.dart';
 import '../utils/web_download.dart';
 
 final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
+
+class _PdfQr {
+  final pw.MemoryImage image;
+  final String label;
+  const _PdfQr(this.image, this.label);
+}
+
 const _defaultBrandColor = PdfColor.fromInt(0xFFB5651D);
 
 pw.Widget _cell(
@@ -55,7 +62,7 @@ pw.Page _buildStatementPage({
   required Customer customer,
   required String businessName,
   required PdfColor brand,
-  required List<pw.MemoryImage> qrImages,
+  required List<_PdfQr> qrImages,
   required pw.MemoryImage? logo,
   required DateTime now,
 }) {
@@ -269,7 +276,17 @@ pw.Page _buildStatementPage({
                     runSpacing: 8,
                     alignment: pw.WrapAlignment.center,
                     children: [
-                      for (final img in qrImages) pw.Image(img, width: 130),
+                      for (final qr in qrImages)
+                        pw.Column(
+                          children: [
+                            pw.Image(qr.image, width: 130, height: 130),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              qr.label,
+                              style: const pw.TextStyle(fontSize: 9),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ],
@@ -303,17 +320,25 @@ Future<pw.MemoryImage?> _loadLogoImage() async {
 /// Payment QR codes) as PDF images. Falls back to the bundled sample QR
 /// asset if none are configured yet, so statements still show something
 /// useful out of the box.
-Future<List<pw.MemoryImage>> _loadQrImages(List<int> enabledSlots) async {
+Future<List<_PdfQr>> _loadQrImages(
+  List<int> enabledSlots,
+  Map<int, String> labels,
+) async {
   try {
     final files = await listQrPhotos();
     final enabled = files.where((f) => enabledSlots.contains(f.slot)).toList();
     if (enabled.isNotEmpty) {
-      final images = <pw.MemoryImage>[];
+      final images = <_PdfQr>[];
       for (final f in enabled) {
         try {
           final response = await http.get(Uri.parse(f.publicUrl));
           if (response.statusCode == 200) {
-            images.add(pw.MemoryImage(response.bodyBytes));
+            images.add(
+              _PdfQr(
+                pw.MemoryImage(response.bodyBytes),
+                labels[f.slot] ?? 'Payment QR ${f.slot}',
+              ),
+            );
           }
         } catch (_) {
           // Skip this one QR rather than fail the whole statement.
@@ -326,7 +351,7 @@ Future<List<pw.MemoryImage>> _loadQrImages(List<int> enabledSlots) async {
   }
   try {
     final qrBytes = await rootBundle.load('assets/images/qr_maribank.jpg');
-    return [pw.MemoryImage(qrBytes.buffer.asUint8List())];
+    return [_PdfQr(pw.MemoryImage(qrBytes.buffer.asUint8List()), 'Payment QR')];
   } catch (_) {
     return [];
   }
@@ -340,6 +365,7 @@ Future<Uint8List> buildCustomerStatementPdf(
   Customer customer, {
   required String businessName,
   required List<int> enabledQrSlots,
+  required Map<int, String> qrLabels,
   PdfColor? brandColor,
 }) async {
   final brand = brandColor ?? _defaultBrandColor;
@@ -364,8 +390,8 @@ Future<Uint8List> buildCustomerStatementPdf(
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
   final qrImages = hasUnpaid
-      ? await _loadQrImages(enabledQrSlots)
-      : <pw.MemoryImage>[];
+      ? await _loadQrImages(enabledQrSlots, qrLabels)
+      : <_PdfQr>[];
   final logo = await _loadLogoImage();
 
   final doc = pw.Document(
@@ -396,6 +422,7 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
   List<Customer> customers, {
   required String businessName,
   required List<int> enabledQrSlots,
+  required Map<int, String> qrLabels,
   PdfColor? brandColor,
 }) async {
   final brand = brandColor ?? _defaultBrandColor;
@@ -432,8 +459,8 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
   final regularFont = await PdfGoogleFonts.notoSansRegular();
   final boldFont = await PdfGoogleFonts.notoSansBold();
   final qrImages = unpaidSales.isEmpty
-      ? <pw.MemoryImage>[]
-      : await _loadQrImages(enabledQrSlots);
+      ? <_PdfQr>[]
+      : await _loadQrImages(enabledQrSlots, qrLabels);
   final logo = await _loadLogoImage();
 
   final doc = pw.Document(
@@ -644,7 +671,17 @@ Future<Uint8List> buildUnpaidStatementReportPdf(
                     runSpacing: 8,
                     alignment: pw.WrapAlignment.center,
                     children: [
-                      for (final img in qrImages) pw.Image(img, width: 130),
+                      for (final qr in qrImages)
+                        pw.Column(
+                          children: [
+                            pw.Image(qr.image, width: 130, height: 130),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              qr.label,
+                              style: const pw.TextStyle(fontSize: 9),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ],
@@ -668,6 +705,7 @@ Future<void> shareCustomerStatement(
   Customer customer, {
   required String businessName,
   required List<int> enabledQrSlots,
+  required Map<int, String> qrLabels,
   PdfColor? brandColor,
 }) async {
   final bytes = await buildCustomerStatementPdf(
@@ -675,6 +713,7 @@ Future<void> shareCustomerStatement(
     customer,
     businessName: businessName,
     enabledQrSlots: enabledQrSlots,
+    qrLabels: qrLabels,
     brandColor: brandColor,
   );
   final safeName = customer.name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
@@ -709,6 +748,7 @@ Future<void> shareBulkUnpaidStatements(
   List<Customer> customers, {
   required String businessName,
   required List<int> enabledQrSlots,
+  required Map<int, String> qrLabels,
   PdfColor? brandColor,
 }) async {
   final bytes = await buildUnpaidStatementReportPdf(
@@ -716,6 +756,7 @@ Future<void> shareBulkUnpaidStatements(
     customers,
     businessName: businessName,
     enabledQrSlots: enabledQrSlots,
+    qrLabels: qrLabels,
     brandColor: brandColor,
   );
   final fileName =

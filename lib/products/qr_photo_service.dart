@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'product_photo_service.dart' show cacheBust;
 
 const _bucket = 'qr-codes';
-const maxQrSlots = 3;
 
 class QrPhotoFile {
   final int slot;
@@ -19,8 +18,8 @@ class QrPhotoFile {
   });
 }
 
-/// Lists this user's uploaded payment QR images (up to [maxQrSlots]),
-/// ordered by slot. A slot with nothing uploaded just doesn't appear.
+/// Lists this user's uploaded payment QR images, ordered by slot. A slot with
+/// nothing uploaded just doesn't appear; there is intentionally no fixed cap.
 Future<List<QrPhotoFile>> listQrPhotos() async {
   final client = Supabase.instance.client;
   final uid = client.auth.currentUser!.id;
@@ -47,7 +46,7 @@ Future<List<QrPhotoFile>> listQrPhotos() async {
   return files;
 }
 
-/// Uploads/replaces the QR image for [slot] (1-based, up to [maxQrSlots]).
+/// Uploads/replaces the QR image for [slot] (1-based).
 /// Clears any previously-uploaded file for that slot first, in case it had
 /// a different file extension, so it doesn't leave an orphaned duplicate.
 Future<String> uploadQrImage({required int slot, required XFile file}) async {

@@ -278,6 +278,7 @@ class _UnpaidStatementReportScreenState
         customers,
         businessName: business.name,
         enabledQrSlots: business.enabledQrSlots,
+        qrLabels: business.qrLabels,
         brandColor: PdfColor.fromInt(seedColor.toARGB32()),
       );
     } catch (e) {

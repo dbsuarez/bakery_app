@@ -72,6 +72,18 @@ void main() {
         0,
       );
     });
+
+    test('breakdown separates bakery and personal batch balances', () {
+      final result = customerBalanceBreakdown(
+        1,
+        [_sale(1, batchId: 1, amount: 100), _sale(2, batchId: 2, amount: 60)],
+        [_batch(now, id: 1), _batch(now, id: 2, isPersonal: true)],
+        [_payment(1, saleId: 1, amount: 25)],
+      );
+
+      expect(result.bakery, 75);
+      expect(result.personal, 60);
+    });
   });
 
   test('month boundaries include the first day and exclude prior expenses', () {
@@ -93,6 +105,60 @@ void main() {
     expect(data.allTimeExpenses, 105);
     expect(data.thisMonthEstimatedProfit, 60);
     expect(data.thisMonthNetProfit, 45);
+  });
+
+  test('pending remittance uses the full batch value', () {
+    final data = computeDashboard(
+      products: const [],
+      customers: const [],
+      batches: [_batch(now, produced: 10, unitPrice: 10)],
+      sales: [_sale(1, batchId: 1, amount: 10)],
+      now: now,
+    );
+
+    expect(data.pendingRemittance, 100);
+  });
+
+  test('internal use is valued at unit price and deducted from remittance', () {
+    final batch = _batch(now, produced: 10, unitPrice: 10);
+    final sales = [
+      _sale(1, batchId: 1, amount: 30),
+      _sale(
+        2,
+        batchId: 1,
+        quantity: 2,
+        amount: 5,
+        type: SaleType.internalConsumption,
+      ),
+    ];
+
+    expect(batchInternalConsumptionValue(batch, sales), 20);
+    expect(batchRemittanceValue(batch, sales), 80);
+    expect(batchRecordedCustomerTransactions(1, sales), 30);
+    final data = computeDashboard(
+      products: const [],
+      customers: const [],
+      batches: [batch],
+      sales: sales,
+      now: now,
+    );
+    expect(data.pendingRemittance, 80);
+  });
+
+  test('manually recorded discounts reduce remittance', () {
+    final batch = _batch(now, produced: 10, unitPrice: 10);
+    final sales = [_sale(1, batchId: 1, quantity: 2, amount: 15, discount: 5)];
+
+    expect(batchApprovedDiscountValue(batch, sales), 5);
+    expect(batchRemittanceValue(batch, sales), 95);
+  });
+
+  test('manually recorded add-ons increase remittance', () {
+    final batch = _batch(now, produced: 10, unitPrice: 10);
+    final sales = [_sale(1, batchId: 1, quantity: 1, amount: 15, discount: -5)];
+
+    expect(batchApprovedAddOnValue(batch, sales), 5);
+    expect(batchRemittanceValue(batch, sales), 105);
   });
 
   test('customer of the month is separate from customer of all time', () {
@@ -129,6 +195,49 @@ void main() {
     expect(
       data.topUnpaidBalances.firstWhere((s) => s.customer.id == 2).value,
       200,
+    );
+  });
+
+  test('dashboard unpaid balance matches bakery plus personal breakdown', () {
+    final batches = [_batch(now, id: 1), _batch(now, id: 2, isPersonal: true)];
+    final sales = [
+      _sale(1, batchId: 1, amount: 100),
+      _sale(2, batchId: 2, amount: 60),
+    ];
+    final advances = [
+      CashAdvance(
+        id: 1,
+        customerId: 1,
+        advanceDate: now,
+        amount: 40,
+        updatedAt: now,
+      ),
+    ];
+    final customer = Customer(id: 1, name: 'Customer', updatedAt: now);
+    final breakdown = customerBalanceBreakdown(
+      1,
+      sales,
+      batches,
+      const [],
+      advances,
+    );
+    final dashboard = computeDashboard(
+      products: const [],
+      customers: [customer],
+      batches: batches,
+      sales: sales,
+      cashAdvances: advances,
+      now: now,
+    );
+
+    expect(breakdown.bakery, 100);
+    expect(breakdown.personal, 100);
+    expect(dashboard.outstandingReceivables, breakdown.bakery);
+    expect(dashboard.personalOutstandingReceivables, breakdown.personal);
+    expect(dashboard.topUnpaidBalances.single.value, 200);
+    expect(
+      dashboard.topUnpaidBalances.single.value,
+      breakdown.bakery + breakdown.personal,
     );
   });
 
@@ -217,6 +326,7 @@ Sale _sale(
   DateTime? datePaid,
   DateTime? saleDate,
   bool deleted = false,
+  double discount = 0,
 }) => Sale(
   id: id,
   batchId: batchId,
@@ -224,6 +334,7 @@ Sale _sale(
   saleDate: saleDate ?? DateTime(2026, 10, 19),
   quantity: quantity,
   amount: amount,
+  discount: discount,
   paid: paid,
   datePaid: datePaid,
   saleType: type,

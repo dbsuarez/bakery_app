@@ -123,11 +123,12 @@ class _SingleSaleScreenState extends State<SingleSaleScreen> {
 
     final discount = double.tryParse(_discountController.text) ?? 0;
     if (!_amountEdited) {
-      if (_saleType == SaleType.internalConsumption || isRedemption) {
+      if (isRedemption) {
         _amountController.text = '0';
       } else if (batch != null) {
         final full = _quantity * batch.unitPrice;
-        final discounted = full - discount;
+        final discounted =
+            full - (_saleType == SaleType.customerSale ? discount : 0);
         _amountController.text = (discounted < 0 ? 0 : discounted)
             .toStringAsFixed(2);
       }

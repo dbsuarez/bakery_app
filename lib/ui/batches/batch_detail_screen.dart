@@ -232,6 +232,19 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   icon: const Icon(Icons.undo),
                   label: const Text('Revert Remittance'),
                 ),
+              if (batch.isPersonal)
+                TextButton.icon(
+                  onPressed: () => _deletePersonalBatch(
+                    context,
+                    product?.title ?? 'Unknown product',
+                    sales.isEmpty,
+                  ),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete personal batch'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -257,13 +270,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 'Qty ${sale.quantity} · ${_currency.format(sale.amount)} · '
                 '${appDateFormat.format(sale.saleDate)}',
               ),
-              trailing: sale.saleType == SaleType.pointsRedemption
-                  ? Chip(
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (sale.saleType == SaleType.pointsRedemption)
+                    Chip(
                       label: const Text('Redeemed'),
                       backgroundColor: Colors.amber.withValues(alpha: 0.2),
                     )
-                  : sale.saleType != SaleType.customerSale
-                  ? Chip(
+                  else if (sale.saleType != SaleType.customerSale)
+                    Chip(
                       label: Text(
                         sale.saleType == SaleType.internalConsumption
                             ? 'Internal'
@@ -273,17 +289,83 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         alpha: 0.15,
                       ),
                     )
-                  : Chip(
+                  else
+                    Chip(
                       label: Text(sale.paid ? 'Paid' : 'Unpaid'),
                       backgroundColor: sale.paid
                           ? Colors.green.withValues(alpha: 0.15)
                           : Colors.orange.withValues(alpha: 0.15),
                     ),
+                  IconButton(
+                    onPressed: () => _editSale(context, sale),
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit transaction',
+                  ),
+                ],
+              ),
               onTap: () => _editSale(context, sale),
             ),
         ],
       ),
     );
+  }
+
+  Future<void> _deletePersonalBatch(
+    BuildContext context,
+    String productName,
+    bool isEmpty,
+  ) async {
+    if (!isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Batch cannot be deleted'),
+          content: const Text(
+            'This Personal batch has transactions. Remove or correct those '
+            'transactions first so customer and inventory records are not lost.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Personal batch?'),
+        content: Text(
+          '$productName · ${appDateFormat.format(context.read<AppState>().batchById(batchId)!.batchDate)}\n\n'
+          'This removes the empty batch from the app. The product itself will not be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    var deleted = false;
+    await runGuarded(context, () async {
+      await context.read<BakeryRepository>().deleteEmptyPersonalBatch(batchId);
+      deleted = true;
+    });
+    if (deleted && context.mounted) Navigator.of(context).pop();
   }
 
   Future<void> _markRemitted(BuildContext context) async {
@@ -418,6 +500,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     final discountController = TextEditingController(
       text: sale.discount.toStringAsFixed(2),
     );
+    final unitPrice =
+        context.read<AppState>().batchById(sale.batchId)?.unitPrice ?? 0;
     var saleType = sale.saleType;
     var paid = sale.paid;
     var isReservation = sale.isReservation;
@@ -427,6 +511,18 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     var paymentMethod =
         sale.paymentMethod ??
         (paymentMethods.isEmpty ? null : paymentMethods.first);
+
+    void recalculateAmount() {
+      final quantity = int.tryParse(quantityController.text) ?? 0;
+      final discount = saleType == SaleType.customerSale
+          ? (double.tryParse(discountController.text) ?? 0)
+          : 0.0;
+      final fullAmount = quantity * unitPrice;
+      final amount = saleType == SaleType.pointsRedemption
+          ? 0.0
+          : (fullAmount - discount).clamp(0, double.infinity);
+      amountController.text = amount.toStringAsFixed(2);
+    }
 
     final action = await showDialog<String>(
       context: context,
@@ -453,12 +549,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     child: Text('Points redemption'),
                   ),
                 ],
-                onChanged: (v) => setDialogState(() => saleType = v!),
+                onChanged: (v) => setDialogState(() {
+                  saleType = v!;
+                  recalculateAmount();
+                }),
               ),
               TextField(
                 controller: quantityController,
                 decoration: const InputDecoration(labelText: 'Quantity'),
                 keyboardType: TextInputType.number,
+                onChanged: (_) => setDialogState(recalculateAmount),
               ),
               TextField(
                 controller: amountController,
@@ -471,11 +571,14 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 TextField(
                   controller: discountController,
                   decoration: const InputDecoration(
-                    labelText: 'Discount (optional)',
+                    labelText: 'Price adjustment',
+                    helperText: 'Discount: 5  •  Agreed add-on: -5',
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
+                    signed: true,
                   ),
+                  onChanged: (_) => setDialogState(recalculateAmount),
                 ),
               if (saleType == SaleType.customerSale)
                 SwitchListTile(

@@ -83,7 +83,6 @@ create table public.sales (
   is_deleted boolean not null default false,
   constraint sales_quantity_positive check (quantity > 0),
   constraint sales_amount_nonnegative check (amount >= 0),
-  constraint sales_discount_nonnegative check (discount >= 0),
   constraint sales_type_valid check (sale_type in ('customer_sale', 'unsold', 'internal_consumption', 'points_redemption')),
   constraint sales_payment_date_valid check (paid = true or date_paid is null)
 );
@@ -552,7 +551,7 @@ using (
   and (storage.foldername(name))[1] = auth.uid()::text
 );
 
--- Payment QR code storage bucket (up to 3 slots per user, shown on
+-- Payment QR code storage bucket (dynamic slots per user, shown on
 -- statement PDFs) - same public-read / owner-write shape as product photos.
 insert into storage.buckets (id, name, public)
 values ('qr-codes', 'qr-codes', true)
@@ -753,7 +752,7 @@ grant select, insert, update, delete on public.customer_favorites to authenticat
 -- whole script.
 alter table public.sales add column if not exists discount numeric(12,2) not null default 0;
 alter table public.sales drop constraint if exists sales_discount_nonnegative;
-alter table public.sales add constraint sales_discount_nonnegative check (discount >= 0);
+-- Positive values are discounts; negative values are customer-approved add-ons.
 
 -- Run this against an already-created database to add installment/partial
 -- payments against an unpaid sale without re-running the whole script. The
@@ -1282,9 +1281,11 @@ declare
   link_record public.customer_soa_links%rowtype;
   business_name text;
   enabled_slots jsonb;
+  qr_label_map jsonb;
   balance numeric(12,2);
   sale_rows jsonb;
   qr_rows jsonb;
+  qr_label_rows jsonb;
 begin
   if p_token is null or length(p_token) <> 64 then
     raise exception 'Statement link is invalid';
@@ -1306,8 +1307,9 @@ begin
 
   select
     coalesce(nullif(u.raw_user_meta_data->>'business_name', ''), 'My Bakery'),
-    coalesce(u.raw_user_meta_data->'enabled_qr_slots', '[1,2,3]'::jsonb)
-  into business_name, enabled_slots
+    coalesce(u.raw_user_meta_data->'enabled_qr_slots', '[1,2,3]'::jsonb),
+    coalesce(u.raw_user_meta_data->'qr_labels', '{}'::jsonb)
+  into business_name, enabled_slots, qr_label_map
   from auth.users u
   where u.id = link_record.user_id;
 
@@ -1375,16 +1377,24 @@ begin
       and not s.is_deleted
   ) rows_for_customer;
 
-  select coalesce(jsonb_agg(o.name order by o.name), '[]'::jsonb)
-  into qr_rows
-  from storage.objects o
-  where o.bucket_id = 'qr-codes'
-    and o.name ~ ('^' || link_record.user_id::text || '/qr_[1-3][.][A-Za-z0-9]+$')
-    and exists (
-      select 1
-      from jsonb_array_elements_text(enabled_slots) slot(value)
-      where slot.value = substring(o.name from 'qr_([0-9]+)[.]')
-    );
+  select
+    coalesce(jsonb_agg(q.name order by q.slot_number), '[]'::jsonb),
+    coalesce(jsonb_agg(
+      coalesce(qr_label_map->>q.slot_number::text, 'Payment QR '||q.slot_number)
+      order by q.slot_number
+    ), '[]'::jsonb)
+  into qr_rows, qr_label_rows
+  from (
+    select o.name, (substring(o.name from '/qr_([0-9]+)[.]'))::int slot_number
+    from storage.objects o
+    where o.bucket_id = 'qr-codes'
+      and o.name ~ ('^' || link_record.user_id::text || '/qr_[0-9]+[.][A-Za-z0-9]+$')
+      and exists (
+        select 1
+        from jsonb_array_elements_text(enabled_slots) slot(value)
+        where slot.value = substring(o.name from 'qr_([0-9]+)[.]')
+      )
+  ) q;
 
   return jsonb_build_object(
     'business_name', business_name,
@@ -1396,7 +1406,8 @@ begin
     ),
     'balance', balance,
     'sales', sale_rows,
-    'qr_paths', qr_rows
+    'qr_paths', qr_rows,
+    'qr_labels', qr_label_rows
   );
 end;
 $$;
@@ -1694,3 +1705,42 @@ revoke all on function public.preview_backup_v2(jsonb) from public;
 revoke all on function public.restore_backup_v2(jsonb, boolean) from public;
 grant execute on function public.preview_backup_v2(jsonb) to authenticated;
 grant execute on function public.restore_backup_v2(jsonb, boolean) to authenticated;
+-- Safely soft-delete an empty, unremitted Personal batch.
+create or replace function public.delete_empty_personal_batch(p_batch_id uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_batch public.batches%rowtype;
+begin
+  select * into v_batch
+  from public.batches
+  where id = p_batch_id and user_id = auth.uid() and not is_deleted
+  for update;
+
+  if not found then
+    raise exception 'Batch not found.' using errcode = 'P0002';
+  end if;
+  if not v_batch.is_personal then
+    raise exception 'Only Personal batches can be deleted here.' using errcode = 'P0001';
+  end if;
+  if v_batch.remitted then
+    raise exception 'A remitted batch cannot be deleted.' using errcode = 'P0001';
+  end if;
+  if exists (
+    select 1 from public.sales
+    where batch_id = p_batch_id and user_id = auth.uid() and not is_deleted
+  ) then
+    raise exception 'This batch has transactions and cannot be deleted.' using errcode = 'P0001';
+  end if;
+
+  update public.batches
+  set is_deleted = true, updated_at = now()
+  where id = p_batch_id and user_id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_empty_personal_batch(uuid) from public;
+grant execute on function public.delete_empty_personal_batch(uuid) to authenticated;

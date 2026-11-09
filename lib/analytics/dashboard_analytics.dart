@@ -259,7 +259,7 @@ DashboardData computeDashboard({
   final pendingRemittance = sumMoney(
     liveBatches
         .where((b) => !b.remitted && !b.isPersonal)
-        .map((b) => batchRevenue(b.id, liveSales)),
+        .map((b) => batchRemittanceValue(b, liveSales)),
   );
 
   final thisWeekStart = _startOfWeek(today);
@@ -624,7 +624,7 @@ DashboardData computeDashboard({
   final personalUnitsConsumed = liveSales
       .where((s) => personalBatchIdSet.contains(s.batchId))
       .fold<int>(0, (sum, s) => sum + s.quantity);
-  final personalOutstandingReceivables = sumMoney(
+  final personalSaleReceivables = sumMoney(
     liveSales
         .where(
           (s) =>
@@ -634,6 +634,17 @@ DashboardData computeDashboard({
         )
         .map((s) => saleRemainingAmount(s, salePayments)),
   );
+  final cashAdvanceReceivables = sumMoney(
+    cashAdvances
+        .where((advance) => !advance.isDeleted && !advance.paid)
+        .map(
+          (advance) => cashAdvanceRemainingAmount(advance, cashAdvancePayments),
+        ),
+  );
+  final personalOutstandingReceivables = sumMoney([
+    personalSaleReceivables,
+    cashAdvanceReceivables,
+  ]);
   final personalRevenue = sumMoney(
     liveSales
         .where(

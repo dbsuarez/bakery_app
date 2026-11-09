@@ -538,7 +538,8 @@ class _MoneyCards extends StatelessWidget {
       _StatTile(
         label: 'Outstanding receivables',
         value: _currency.format(data.outstandingReceivables),
-        description: 'Unpaid customer sales, still on active batches',
+        description:
+            'Unpaid bakery sales; excludes personal batches and cash advances',
       ),
       if (data.frontedAmount > 0)
         _StatTile(
@@ -660,7 +661,7 @@ class _MoneyCards extends StatelessWidget {
         _StatTile(
           label: 'Personal outstanding receivables',
           value: _currency.format(data.personalOutstandingReceivables),
-          description: 'Unpaid real sales off a personal batch',
+          description: 'Unpaid personal-batch sales and cash advances',
         ),
       _StatTile(
         label: 'Personal unsold value',
@@ -761,18 +762,33 @@ class _MoneyCards extends StatelessWidget {
     final trend = thisWeekAll - lastWeekAll;
     final thisMonthAll =
         data.thisMonthRevenue + data.personalMonthlyTrend.last.revenue;
+    String splitMoney(double bakery, double personal) =>
+        'Bakery: ${_currency.format(bakery)} · '
+        'Personal: ${_currency.format(personal)}';
+    String splitCount(int bakery, int personal) =>
+        'Bakery: $bakery · Personal: $personal';
+    String splitNullable(double? bakery, double? personal) =>
+        bakery == null || personal == null
+        ? 'Set unit costs in both Bakery and Personal to see the split'
+        : splitMoney(bakery, personal);
 
     return <Widget>[
       _StatTile(
         label: 'Batches created (all time)',
         value: '${data.batchCount}',
-        description: 'Total batches recorded, business + personal',
+        description: splitCount(
+          data.batchCount - data.personalBatchCount,
+          data.personalBatchCount,
+        ),
         onTap: () => goToBatches(BatchFilter.all),
       ),
       _StatTile(
         label: 'Outstanding receivables',
         value: _currency.format(receivables),
-        description: 'Unpaid customer sales, business + personal',
+        description: splitMoney(
+          data.outstandingReceivables,
+          data.personalOutstandingReceivables,
+        ),
       ),
       if (data.frontedAmount > 0)
         _StatTile(
@@ -785,7 +801,7 @@ class _MoneyCards extends StatelessWidget {
         _StatTile(
           label: 'Unsold value',
           value: _currency.format(unsoldValue),
-          description: 'Remaining stock, business + personal, at unit price',
+          description: splitMoney(data.unsoldValue, data.personalUnsoldValue),
           onTap: () => goToBatches(BatchFilter.all),
         ),
       _StatTile(
@@ -797,28 +813,36 @@ class _MoneyCards extends StatelessWidget {
       _StatTile(
         label: 'This week revenue',
         value: _currency.format(thisWeekAll),
-        description:
-            'Business sales + personal value produced, Monday to today',
+        description: splitMoney(
+          data.thisWeekRevenue,
+          personalWeekly.last.revenue,
+        ),
       ),
       _StatTile(
         label: 'Last week (${trend >= 0 ? '+' : ''}${_currency.format(trend)})',
         value: _currency.format(lastWeekAll),
-        description: 'Prior full week, vs. this week',
+        description: splitMoney(
+          data.lastWeekRevenue,
+          personalWeekly[personalWeekly.length - 2].revenue,
+        ),
       ),
       _StatTile(
         label: 'This month revenue',
         value: _currency.format(thisMonthAll),
-        description:
-            'Business sales + personal value produced, 1st of month to today',
+        description: splitMoney(
+          data.thisMonthRevenue,
+          data.personalMonthlyTrend.last.revenue,
+        ),
       ),
       _StatTile(
         label: 'Est. profit (this month)',
         value: thisMonthProfit == null
             ? '-'
             : _currency.format(thisMonthProfit),
-        description: thisMonthProfit == null
-            ? 'Set a unit cost on a batch to see this'
-            : 'Revenue minus cost, business + personal, this month',
+        description: splitNullable(
+          data.thisMonthEstimatedProfit,
+          data.personalThisMonthEstimatedProfit,
+        ),
       ),
       if (data.thisMonthExpenses > 0)
         _StatTile(
@@ -834,21 +858,23 @@ class _MoneyCards extends StatelessWidget {
         value: thisMonthNetProfitAll == null
             ? '-'
             : _currency.format(thisMonthNetProfitAll),
-        description: thisMonthNetProfitAll == null
-            ? 'Set a unit cost on a batch to see this'
-            : 'Est. profit minus expenses, this month',
+        description: splitNullable(
+          data.thisMonthNetProfit,
+          data.personalThisMonthEstimatedProfit,
+        ),
       ),
       _StatTile(
         label: 'All-time revenue',
         value: _currency.format(allTimeRevenue),
-        description: 'All real sales ever recorded, business + personal',
+        description: splitMoney(data.allTimeRevenue, data.personalRevenue),
       ),
       _StatTile(
         label: 'Est. profit (all time)',
         value: allTimeProfit == null ? '-' : _currency.format(allTimeProfit),
-        description: allTimeProfit == null
-            ? 'Set a unit cost on a batch to see this'
-            : 'Revenue minus cost, business + personal',
+        description: splitNullable(
+          data.allTimeEstimatedProfit,
+          data.personalEstimatedProfit,
+        ),
       ),
       if (data.allTimeExpenses > 0)
         _StatTile(
@@ -864,9 +890,10 @@ class _MoneyCards extends StatelessWidget {
         value: allTimeNetProfitAll == null
             ? '-'
             : _currency.format(allTimeNetProfitAll),
-        description: allTimeNetProfitAll == null
-            ? 'Set a unit cost on a batch to see this'
-            : 'Est. profit minus expenses',
+        description: splitNullable(
+          data.allTimeNetProfit,
+          data.personalEstimatedProfit,
+        ),
       ),
       if (data.averageOrderValue > 0)
         _StatTile(
@@ -880,30 +907,6 @@ class _MoneyCards extends StatelessWidget {
           value: '🔥 ${data.salesStreak}-day',
           description: 'Consecutive days with at least one sale',
         ),
-      _StatTile(
-        label: 'Personal batches (all time)',
-        value: '${data.personalBatchCount}',
-        description: 'Batches made for your own use',
-      ),
-      _StatTile(
-        label: 'Personal value produced (all time)',
-        value: _currency.format(data.personalTotalValueProduced),
-        description: 'Notional value of everything made for yourself',
-      ),
-      if (data.personalTotalCost != null)
-        _StatTile(
-          label: 'Personal cost (all time)',
-          value: _currency.format(data.personalTotalCost),
-          description: 'Cost of everything made for yourself',
-        ),
-      _StatTile(
-        label: 'Personal units used',
-        value: '${data.personalUnitsConsumed}',
-        description: 'Units consumed or given away from personal batches',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PersonalActivityScreen()),
-        ),
-      ),
     ];
   }
 
@@ -1292,7 +1295,7 @@ class _ProductCards extends StatelessWidget {
               onTap: () => _openBatchesForProduct(context, s.product.title),
             ),
         ]),
-        _NamedList('Unsold / overproduction watchlist', [
+        _NamedList('Bakery unsold watchlist', [
           for (final s in data.unsoldWatchlist)
             _Entry(
               '${s.product.title} (${s.value.toInt()} unsold)',

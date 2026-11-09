@@ -53,6 +53,11 @@ abstract class BakeryRepository {
   Future<void> updateProduct(Product product);
   Future<void> updateCustomer(Customer customer);
   Future<void> updateBatch(Batch batch);
+
+  /// Soft-deletes an unremitted Personal batch only when it has no live
+  /// transactions. The database rechecks these rules transactionally.
+  Future<void> deleteEmptyPersonalBatch(int batchId);
+
   Future<void> updateSale(Sale sale, {bool allowOverallocate = false});
   Future<void> revertBatchRemittance(int batchId);
 

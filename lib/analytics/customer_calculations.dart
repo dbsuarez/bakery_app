@@ -73,6 +73,50 @@ double customerBalance(
   return sumMoney([salesBalance, cashBalance]);
 }
 
+/// Splits outstanding balances between bakery sales and personal activity.
+/// Cash advances are personal lending. Legacy sales with a missing batch stay
+/// on the bakery side so their balance is never silently omitted.
+({double bakery, double personal}) customerBalanceBreakdown(
+  int customerId,
+  List<Sale> sales,
+  List<Batch> batches, [
+  List<SalePayment> payments = const [],
+  List<CashAdvance> cashAdvances = const [],
+  List<CashAdvancePayment> cashAdvancePayments = const [],
+]) {
+  final batchById = {for (final batch in batches) batch.id: batch};
+  final liveSales = sales.where(
+    (sale) =>
+        sale.customerId == customerId &&
+        !sale.isDeleted &&
+        !sale.paid &&
+        sale.saleType == SaleType.customerSale,
+  );
+  final bakery = sumMoney(
+    liveSales
+        .where((sale) => batchById[sale.batchId]?.isPersonal != true)
+        .map((sale) => saleRemainingAmount(sale, payments)),
+  );
+  final personalSales = sumMoney(
+    liveSales
+        .where((sale) => batchById[sale.batchId]?.isPersonal == true)
+        .map((sale) => saleRemainingAmount(sale, payments)),
+  );
+  final cashBalance = sumMoney(
+    cashAdvances
+        .where(
+          (advance) =>
+              advance.customerId == customerId &&
+              !advance.isDeleted &&
+              !advance.paid,
+        )
+        .map(
+          (advance) => cashAdvanceRemainingAmount(advance, cashAdvancePayments),
+        ),
+  );
+  return (bakery: bakery, personal: sumMoney([personalSales, cashBalance]));
+}
+
 /// A customer's running credit balance - positive means the bakery owes
 /// them (e.g. an overpayment from a batch price correction), negative
 /// would mean they owe a touch more (rare - a price increase after they'd

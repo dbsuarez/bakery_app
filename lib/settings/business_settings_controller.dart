@@ -17,6 +17,7 @@ class BusinessSettingsController extends ChangeNotifier {
   static const _kCustomerGroupsKey = 'customer_groups';
   static const _kPaymentMethodsKey = 'payment_methods';
   static const _kEnabledQrSlotsKey = 'enabled_qr_slots';
+  static const _kQrLabelsKey = 'qr_labels';
 
   static const defaultName = 'My Bakery';
   static const defaultPaymentMethods = ['Cash', 'AUB', 'Maribank', 'GCash'];
@@ -37,6 +38,7 @@ class BusinessSettingsController extends ChangeNotifier {
   List<String> _customerGroups = [];
   List<String> _paymentMethods = List.of(defaultPaymentMethods);
   List<int> _enabledQrSlots = List.of(defaultEnabledQrSlots);
+  Map<int, String> _qrLabels = {};
 
   String get name => _name;
   double get pesosPerPoint => _pesosPerPoint;
@@ -46,6 +48,8 @@ class BusinessSettingsController extends ChangeNotifier {
   List<String> get customerGroups => List.unmodifiable(_customerGroups);
   List<String> get paymentMethods => List.unmodifiable(_paymentMethods);
   List<int> get enabledQrSlots => List.unmodifiable(_enabledQrSlots);
+  Map<int, String> get qrLabels => Map.unmodifiable(_qrLabels);
+  String qrLabel(int slot) => _qrLabels[slot] ?? 'Payment QR $slot';
 
   StreamSubscription<AuthState>? _authSub;
 
@@ -74,6 +78,7 @@ class BusinessSettingsController extends ChangeNotifier {
       final customerGroupsVal = meta?[_kCustomerGroupsKey];
       final paymentMethodsVal = meta?[_kPaymentMethodsKey];
       final enabledQrSlotsVal = meta?[_kEnabledQrSlotsKey];
+      final qrLabelsVal = meta?[_kQrLabelsKey];
       final resolvedName = (nameVal is String && nameVal.trim().isNotEmpty)
           ? nameVal
           : defaultName;
@@ -98,6 +103,16 @@ class BusinessSettingsController extends ChangeNotifier {
       final resolvedEnabledQrSlots = enabledQrSlotsVal is List
           ? enabledQrSlotsVal.whereType<num>().map((n) => n.toInt()).toList()
           : List.of(defaultEnabledQrSlots);
+      final resolvedQrLabels = <int, String>{};
+      if (qrLabelsVal is Map) {
+        for (final entry in qrLabelsVal.entries) {
+          final slot = int.tryParse(entry.key.toString());
+          final label = entry.value?.toString().trim() ?? '';
+          if (slot != null && slot > 0 && label.isNotEmpty) {
+            resolvedQrLabels[slot] = label;
+          }
+        }
+      }
       if (resolvedName != _name ||
           resolvedPpp != _pesosPerPoint ||
           resolvedBonus != _sameDayBonusPercent ||
@@ -105,7 +120,8 @@ class BusinessSettingsController extends ChangeNotifier {
           resolvedBonusStart != _sameDayBonusStartDate ||
           !listEquals(resolvedCustomerGroups, _customerGroups) ||
           !listEquals(resolvedPaymentMethods, _paymentMethods) ||
-          !listEquals(resolvedEnabledQrSlots, _enabledQrSlots)) {
+          !listEquals(resolvedEnabledQrSlots, _enabledQrSlots) ||
+          !mapEquals(resolvedQrLabels, _qrLabels)) {
         _name = resolvedName;
         _pesosPerPoint = resolvedPpp;
         _sameDayBonusPercent = resolvedBonus;
@@ -114,6 +130,7 @@ class BusinessSettingsController extends ChangeNotifier {
         _customerGroups = resolvedCustomerGroups;
         _paymentMethods = resolvedPaymentMethods;
         _enabledQrSlots = resolvedEnabledQrSlots;
+        _qrLabels = resolvedQrLabels;
         notifyListeners();
       }
     } catch (_) {
@@ -181,6 +198,17 @@ class BusinessSettingsController extends ChangeNotifier {
     await _saveMetadata();
   }
 
+  Future<void> setQrLabel(int slot, String label) async {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) {
+      _qrLabels.remove(slot);
+    } else {
+      _qrLabels[slot] = trimmed;
+    }
+    notifyListeners();
+    await _saveMetadata();
+  }
+
   // Sends the full local state every time, not just the changed field - in
   // case the server merges shallowly or replaces user_metadata wholesale,
   // this keeps all keys consistent either way.
@@ -196,6 +224,10 @@ class BusinessSettingsController extends ChangeNotifier {
           _kCustomerGroupsKey: _customerGroups,
           _kPaymentMethodsKey: _paymentMethods,
           _kEnabledQrSlotsKey: _enabledQrSlots,
+          _kQrLabelsKey: {
+            for (final entry in _qrLabels.entries)
+              entry.key.toString(): entry.value,
+          },
         },
       ),
     );

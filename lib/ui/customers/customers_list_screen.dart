@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -31,6 +32,7 @@ enum _SoaLinkAction { copy, share }
 /// Sentinel for the group filter meaning "no group assigned" - distinct
 /// from `null`, which means "no filter, show every group".
 const _ungroupedFilterValue = '__ungrouped__';
+final _currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
 
 class _CustomersListScreenState extends State<CustomersListScreen> {
   String _search = '';
@@ -103,6 +105,22 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
       if (aOwes != bOwes) return aOwes ? -1 : 1;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
+
+    var bakeryTotal = 0.0;
+    var personalTotal = 0.0;
+    for (final customer in customers) {
+      final breakdown = customerBalanceBreakdown(
+        customer.id,
+        appState.sales,
+        appState.batches,
+        appState.salePayments,
+        appState.cashAdvances,
+        appState.cashAdvancePayments,
+      );
+      bakeryTotal += breakdown.bakery;
+      personalTotal += breakdown.personal;
+    }
+    final visibleTotal = bakeryTotal + personalTotal;
 
     return Scaffold(
       appBar: AppBar(
@@ -241,10 +259,22 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  '${customers.length} customer(s) · Total: '
-                  '₱${customers.fold<double>(0, (sum, c) => sum + customerBalance(c.id, appState.sales, appState.salePayments, appState.cashAdvances, appState.cashAdvancePayments)).toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${customers.length} customer(s) · Total: '
+                      '${_currency.format(visibleTotal)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Bakery: ${_currency.format(bakeryTotal)} · '
+                      'Personal: ${_currency.format(personalTotal)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
             ),

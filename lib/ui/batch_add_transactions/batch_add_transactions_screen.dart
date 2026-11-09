@@ -736,12 +736,21 @@ class _RowEditorState extends State<_RowEditor> {
     if (qty <= 0) return;
     setState(() {
       widget.row.quantity = qty;
-      if (!widget.row.amountEdited) {
-        widget.row.amount = qty * widget.batch.unitPrice;
-        _amountController.text = widget.row.amount.toStringAsFixed(2);
-      }
+      widget.row.amountEdited = false;
+      _recalculateAmount();
     });
     widget.onChanged();
+  }
+
+  void _recalculateAmount() {
+    final full = widget.row.quantity * widget.batch.unitPrice;
+    final discount = widget.row.saleType == SaleType.customerSale
+        ? widget.row.discount
+        : 0.0;
+    widget.row.amount = widget.row.saleType == SaleType.pointsRedemption
+        ? 0
+        : (full - discount).clamp(0, double.infinity);
+    _amountController.text = widget.row.amount.toStringAsFixed(2);
   }
 
   @override
@@ -825,6 +834,7 @@ class _RowEditorState extends State<_RowEditor> {
                   ),
                   onChanged: (v) {
                     row.discount = double.tryParse(v) ?? 0;
+                    if (!row.amountEdited) _recalculateAmount();
                     widget.onChanged();
                   },
                 ),

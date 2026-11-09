@@ -540,6 +540,15 @@ class RemoteRepository implements BakeryRepository {
   }
 
   @override
+  Future<void> deleteEmptyPersonalBatch(int batchId) async {
+    await client.rpc(
+      'delete_empty_personal_batch',
+      params: {'p_batch_id': _batchIds.toUuid(batchId)},
+    );
+    refresh();
+  }
+
+  @override
   Future<void> addSingleSale(m.Sale sale) async {
     if (sale.quantity <= 0) {
       throw ArgumentError('Quantity must be a positive integer.');

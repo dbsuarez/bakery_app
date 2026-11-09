@@ -66,6 +66,7 @@ class _StatementView extends StatelessWidget {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
     final qrPaths = (data['qr_paths'] as List? ?? const []).cast<String>();
+    final qrLabels = (data['qr_labels'] as List? ?? const []).cast<String>();
     final balance = (data['balance'] as num?)?.toDouble() ?? 0;
     final businessName = data['business_name'] as String? ?? 'My Bakery';
 
@@ -150,7 +151,12 @@ class _StatementView extends StatelessWidget {
                               const _BundledQrCard()
                             else
                               for (var i = 0; i < qrPaths.length; i++)
-                                _QrCard(path: qrPaths[i], number: i + 1),
+                                _QrCard(
+                                  path: qrPaths[i],
+                                  label: i < qrLabels.length
+                                      ? qrLabels[i]
+                                      : 'Payment option ${i + 1}',
+                                ),
                           ],
                         ),
                       ],
@@ -242,9 +248,9 @@ class _SaleCard extends StatelessWidget {
 
 class _QrCard extends StatelessWidget {
   final String path;
-  final int number;
+  final String label;
 
-  const _QrCard({required this.path, required this.number});
+  const _QrCard({required this.path, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -272,10 +278,7 @@ class _QrCard extends StatelessWidget {
                 child: Center(child: Icon(Icons.broken_image_outlined)),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Text('Payment option $number'),
-            ),
+            Padding(padding: const EdgeInsets.all(10), child: Text(label)),
           ],
         ),
       ),
