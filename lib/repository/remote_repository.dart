@@ -12,6 +12,7 @@ import '../models/expense.dart' as m;
 import '../models/favorite_dismissal.dart' as m;
 import '../models/loyalty_adjustment.dart' as m;
 import '../models/product.dart' as m;
+import '../models/product_reservation.dart' as m;
 import '../models/sale.dart' as m;
 import '../utils/money.dart';
 import 'bakery_repository.dart';
@@ -94,6 +95,7 @@ class RemoteRepository implements BakeryRepository {
   final _expenseIds = _IdMapper();
   final _cashAdvanceIds = _IdMapper();
   final _cashAdvancePaymentIds = _IdMapper();
+  final _productReservationIds = _IdMapper();
 
   RemoteRepository(this.client) {
     // All ten consumers subscribe during AppState construction. A broadcast
@@ -286,6 +288,29 @@ class RemoteRepository implements BakeryRepository {
         isDeleted: row['is_deleted'] as bool? ?? false,
       );
 
+  m.ProductReservation _productReservationFromRow(Map<String, dynamic> row) =>
+      m.ProductReservation(
+        id: _productReservationIds.toInt(row['id'] as String),
+        remoteId: row['id'] as String,
+        productId: row['product_id'] == null
+            ? null
+            : _productIds.toInt(row['product_id'] as String),
+        productTitle: row['product_title'] as String,
+        customerId: row['customer_id'] == null
+            ? null
+            : _customerIds.toInt(row['customer_id'] as String),
+        customerName: row['customer_name'] as String,
+        customerContact: row['customer_contact'] as String,
+        quantity: row['quantity'] as int? ?? 1,
+        note: row['note'] as String?,
+        status: m.ReservationStatus.fromValue(
+          row['status'] as String? ?? 'pending',
+        ),
+        createdAt: DateTime.parse(row['created_at'] as String),
+        updatedAt: DateTime.parse(row['updated_at'] as String),
+        isDeleted: row['is_deleted'] as bool? ?? false,
+      );
+
   Future<void> _ensureBatchUnlocked(String batchUuid) async {
     final batch = await client
         .from('batches')
@@ -317,6 +342,7 @@ class RemoteRepository implements BakeryRepository {
     'expenses',
     'cash_advances',
     'cash_advance_payments',
+    'product_reservations',
   ];
 
   List<Map<String, dynamic>> _snapshotRows(
@@ -455,6 +481,14 @@ class RemoteRepository implements BakeryRepository {
       _snapshots.map(
         (snapshot) => snapshot['cash_advance_payments']
             .map(_cashAdvancePaymentFromRow)
+            .toList(),
+      );
+
+  @override
+  Stream<List<m.ProductReservation>> watchProductReservations() =>
+      _snapshots.map(
+        (snapshot) => snapshot['product_reservations']
+            .map(_productReservationFromRow)
             .toList(),
       );
 
@@ -1054,6 +1088,27 @@ class RemoteRepository implements BakeryRepository {
         .from('expenses')
         .update({'is_deleted': true})
         .eq('id', _expenseIds.toUuid(expenseId));
+    refresh();
+  }
+
+  @override
+  Future<void> updateProductReservationStatus(
+    int reservationId,
+    m.ReservationStatus status,
+  ) async {
+    await client
+        .from('product_reservations')
+        .update({'status': status.value})
+        .eq('id', _productReservationIds.toUuid(reservationId));
+    refresh();
+  }
+
+  @override
+  Future<void> deleteProductReservation(int reservationId) async {
+    await client
+        .from('product_reservations')
+        .update({'is_deleted': true})
+        .eq('id', _productReservationIds.toUuid(reservationId));
     refresh();
   }
 }

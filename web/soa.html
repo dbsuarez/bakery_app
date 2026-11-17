@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#8b4513">
   <title>Statement of Account</title>
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="stylesheet" href="soa.css?v=20261029-1">
+  <link rel="stylesheet" href="soa.css?v=20261120-1">
 </head>
 <body>
   <header class="topbar">
@@ -36,8 +36,13 @@
         <strong id="balance"></strong>
         <small id="updated-at"></small>
       </article>
+      <a id="browse-products" class="cta-banner" href="products.html">
+        <span class="cta-banner-title">See what's available</span>
+        <span class="cta-banner-sub">Reserve fresh items before they're gone</span>
+      </a>
       <p class="bookmark-note">
-        Bookmark this page to view your latest statement anytime. Keep this private link secure because anyone with it can view your statement.
+        <button id="bookmark-hint" type="button" class="bookmark-word">Bookmark</button>
+        this page to view your latest statement anytime. Keep this private link secure because anyone with it can view your statement.
       </p>
       <div class="statement-actions">
         <button id="print-statement" type="button">Print / Save PDF</button>
@@ -73,6 +78,6 @@
     </section>
   </template>
 
-  <script src="soa.js?v=20261029-2" defer></script>
+  <script src="soa.js?v=20261120-1" defer></script>
 </body>
 </html>

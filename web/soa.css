@@ -72,12 +72,57 @@ h2 { margin: 30px 0 12px; font-size: 1.35rem; }
 .balance-card strong { font-size: clamp(2rem, 9vw, 3rem); }
 .balance-card small { color: #665246; }
 
+.cta-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 16px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #a8591f, #8b4513);
+  box-shadow: 0 8px 24px rgb(78 48 26 / 22%);
+  color: #fff;
+  text-align: center;
+  text-decoration: none;
+}
+
+.cta-banner-title { font-size: 1.1rem; font-weight: 800; }
+.cta-banner-sub { font-size: .85rem; opacity: .9; }
+
 .bookmark-note {
   margin: 12px 4px 0;
   color: #665c55;
   font-size: .88rem;
   line-height: 1.45;
   text-align: center;
+}
+
+.bookmark-word {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #71370f;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.bookmark-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 3;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 12px 18px;
+  border-radius: 12px;
+  color: #fff;
+  background: #2b211b;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 25%);
+  font-size: .9rem;
+  text-align: center;
+  transform: translate(-50%, 0);
 }
 
 .statement-actions {
@@ -88,7 +133,9 @@ h2 { margin: 30px 0 12px; font-size: 1.35rem; }
   margin-top: 12px;
 }
 
-.statement-actions button {
+.statement-actions button, .statement-actions a {
+  display: inline-flex;
+  align-items: center;
   min-height: 42px;
   padding: 9px 16px;
   border: 1px solid #8b4513;
@@ -98,6 +145,7 @@ h2 { margin: 30px 0 12px; font-size: 1.35rem; }
   cursor: pointer;
   font: inherit;
   font-weight: 700;
+  text-decoration: none;
 }
 
 .transactions { display: grid; gap: 10px; }

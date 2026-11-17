@@ -66,3 +66,14 @@ docs/unpaid_statement_*.pdf
 # Unused high-resolution source/reference artwork
 /docs/images/
 /assets/images/ChatGPT Image*.png
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json
+.mcp.json
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Local notes containing credentials/tokens - never commit
+notes_ba.txt

@@ -7,6 +7,7 @@ import '../models/expense.dart';
 import '../models/favorite_dismissal.dart';
 import '../models/loyalty_adjustment.dart';
 import '../models/product.dart';
+import '../models/product_reservation.dart';
 import '../models/sale.dart';
 
 abstract class BakeryRepository {
@@ -25,6 +26,7 @@ abstract class BakeryRepository {
   Stream<List<Expense>> watchExpenses();
   Stream<List<CashAdvance>> watchCashAdvances();
   Stream<List<CashAdvancePayment>> watchCashAdvancePayments();
+  Stream<List<ProductReservation>> watchProductReservations();
 
   Future<void> createProduct(Product product);
   Future<void> createCustomer(Customer customer);
@@ -121,4 +123,14 @@ abstract class BakeryRepository {
 
   /// Soft-deletes an expense.
   Future<void> deleteExpense(int expenseId);
+
+  /// Updates the owner's follow-up status on a reservation left via the
+  /// public announce/reserve page.
+  Future<void> updateProductReservationStatus(
+    int reservationId,
+    ReservationStatus status,
+  );
+
+  /// Soft-deletes a reservation (e.g. a spam/duplicate entry).
+  Future<void> deleteProductReservation(int reservationId);
 }

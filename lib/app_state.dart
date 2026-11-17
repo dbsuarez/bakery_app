@@ -11,6 +11,7 @@ import 'models/expense.dart';
 import 'models/favorite_dismissal.dart';
 import 'models/loyalty_adjustment.dart';
 import 'models/product.dart';
+import 'models/product_reservation.dart';
 import 'models/sale.dart';
 import 'repository/bakery_repository.dart';
 
@@ -31,6 +32,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   List<Expense> expenses = [];
   List<CashAdvance> cashAdvances = [];
   List<CashAdvancePayment> cashAdvancePayments = [];
+  List<ProductReservation> productReservations = [];
 
   late final StreamSubscription _productsSub;
   late final StreamSubscription _customersSub;
@@ -44,6 +46,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   late final StreamSubscription _expensesSub;
   late final StreamSubscription _cashAdvancesSub;
   late final StreamSubscription _cashAdvancePaymentsSub;
+  late final StreamSubscription _productReservationsSub;
 
   AppState(this.repository) {
     WidgetsBinding.instance.addObserver(this);
@@ -95,6 +98,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       cashAdvancePayments = v;
       notifyListeners();
     });
+    _productReservationsSub = repository.watchProductReservations().listen((
+      v,
+    ) {
+      productReservations = v;
+      notifyListeners();
+    });
   }
 
   /// Refresh when returning to the foreground so decisions are not based on
@@ -143,6 +152,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     return null;
   }
 
+  /// Reservations left on the public announce/reserve page that the owner
+  /// hasn't followed up on yet.
+  int get pendingReservationCount => productReservations
+      .where((r) => r.status == ReservationStatus.pending)
+      .length;
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -158,6 +173,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _expensesSub.cancel();
     _cashAdvancesSub.cancel();
     _cashAdvancePaymentsSub.cancel();
+    _productReservationsSub.cancel();
     super.dispose();
   }
 }

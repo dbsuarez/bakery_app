@@ -12,6 +12,7 @@ import '../../utils/guarded_action.dart';
 import '../../utils/money.dart';
 import '../widgets/product_avatar.dart';
 import 'batch_form_screen.dart';
+import 'reservations_screen.dart';
 import 'swipeable_batch_detail_screen.dart';
 import 'unpaid_report_screen.dart';
 
@@ -38,6 +39,7 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
   late String _search = widget.initialSearch;
   late final _searchController = TextEditingController(text: _search);
   final Set<int> _selectedBatchIds = {};
+  bool _personalRemainingOnly = true;
 
   @override
   void dispose() {
@@ -357,7 +359,15 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
       for (final f in BatchFilter.values)
         f: searched.where((b) => _matchesFilter(b, f)).length,
     };
-    final batches = searched.where(_matches).toList()
+    final batches = searched
+        .where(_matches)
+        .where((batch) {
+          if (_filter != BatchFilter.personal || !_personalRemainingOnly) {
+            return true;
+          }
+          return remainingQuantity(batch, appState.sales) > 0;
+        })
+        .toList()
       ..sort((a, b) {
         final dateCompare = b.batchDate.compareTo(a.batchDate);
         if (dateCompare != 0) return dateCompare;
@@ -422,6 +432,19 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
                 ),
               ]
             : [
+                IconButton(
+                  icon: Badge(
+                    label: Text('${appState.pendingReservationCount}'),
+                    isLabelVisible: appState.pendingReservationCount > 0,
+                    child: const Icon(Icons.bookmark_add_outlined),
+                  ),
+                  tooltip: 'Reservations',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ReservationsScreen(),
+                    ),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.receipt_long_outlined),
                   tooltip: 'Unpaid report',
@@ -514,6 +537,19 @@ class _BatchesListScreenState extends State<BatchesListScreen> {
               ],
             ),
           ),
+          if (_filter == BatchFilter.personal)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilterChip(
+                label: const Text('Remaining only'),
+                avatar: _personalRemainingOnly
+                    ? const Icon(Icons.check, size: 18)
+                    : null,
+                selected: _personalRemainingOnly,
+                onSelected: (value) =>
+                    setState(() => _personalRemainingOnly = value),
+              ),
+            ),
           if (_filter == BatchFilter.awaiting ||
               _filter == BatchFilter.remitted ||
               _filter == BatchFilter.personal)

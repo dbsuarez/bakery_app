@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#8b4513">
+  <title>Available Products</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="soa.css?v=20261120-1">
+  <link rel="stylesheet" href="products.css?v=20261121-1">
+</head>
+<body>
+  <header class="topbar">
+    <img class="top-logo" src="assets/assets/images/logo.png" alt="" width="96" height="44">
+    <span id="business-name">My Bakery</span>
+  </header>
+
+  <main id="app" class="shell" aria-live="polite">
+    <section id="loading" class="state-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Loading available products…</h1>
+    </section>
+  </main>
+
+  <template id="products-template">
+    <section>
+      <div class="document-header">
+        <h2>Available now</h2>
+        <time id="generated-at"></time>
+      </div>
+      <div class="brand-rule"></div>
+      <a id="back-to-soa" class="back-link" href="#" hidden>&larr; Back to my statement</a>
+      <p class="help" id="products-help">
+        Tap "Reserve" on anything you'd like and leave your name and a way to
+        reach you - we'll follow up to confirm.
+      </p>
+      <section id="my-reservations-section" hidden>
+        <h2>My reservations</h2>
+        <div id="my-reservations" class="my-reservations"></div>
+      </section>
+      <div id="product-grid" class="product-grid"></div>
+    </section>
+  </template>
+
+  <template id="my-reservation-template">
+    <article class="my-reservation">
+      <div class="my-reservation-body">
+        <h3 class="my-reservation-title"></h3>
+        <p class="my-reservation-meta"></p>
+      </div>
+      <div class="my-reservation-actions">
+        <input class="my-reservation-qty" type="number" min="1">
+        <button class="my-reservation-update" type="button">Update</button>
+        <button class="my-reservation-cancel" type="button">Cancel</button>
+      </div>
+    </article>
+  </template>
+
+  <template id="product-card-template">
+    <article class="product-card">
+      <div class="product-photo-wrap">
+        <img class="product-photo" alt="" loading="lazy">
+      </div>
+      <div class="product-body">
+        <h3 class="product-title"></h3>
+        <p class="product-remaining"></p>
+        <p class="product-price"></p>
+        <button class="reserve-button" type="button">Reserve</button>
+      </div>
+    </article>
+  </template>
+
+  <dialog id="reserve-dialog">
+    <form id="reserve-form" method="dialog">
+      <h2>Reserve <span id="reserve-product-title"></span></h2>
+      <p class="help">We'll reach out using the contact info below to confirm your reservation.</p>
+      <label id="reserve-name-label">
+        Your name
+        <input id="reserve-name" name="name" type="text" required autocomplete="name">
+      </label>
+      <label id="reserve-contact-label">
+        Phone or Messenger/Facebook name
+        <input id="reserve-contact" name="contact" type="text" required autocomplete="tel">
+      </label>
+      <label>
+        Quantity
+        <input id="reserve-quantity" name="quantity" type="number" min="1" value="1" required>
+      </label>
+      <label>
+        Note (optional)
+        <textarea id="reserve-note" name="note" rows="2" placeholder="Pickup time, variant, etc."></textarea>
+      </label>
+      <p id="reserve-error" class="reserve-error" hidden></p>
+      <div class="reserve-actions">
+        <button id="reserve-cancel" type="button">Cancel</button>
+        <button id="reserve-submit" type="submit">Send reservation</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="products.js?v=20261121-1" defer></script>
+</body>
+</html>

@@ -500,6 +500,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     final discountController = TextEditingController(
       text: sale.discount.toStringAsFixed(2),
     );
+    final notesController = TextEditingController(text: sale.notes ?? '');
     final unitPrice =
         context.read<AppState>().batchById(sale.batchId)?.unitPrice ?? 0;
     var saleType = sale.saleType;
@@ -610,6 +611,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   ],
                   onChanged: (v) => setDialogState(() => paymentMethod = v),
                 ),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(labelText: 'Notes (optional)'),
+              ),
             ],
           ),
           actions: [
@@ -692,7 +697,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           datePaid: paid ? (sale.datePaid ?? DateTime.now()) : null,
           paymentMethod: paid ? paymentMethod : null,
           saleType: saleType,
-          notes: sale.notes,
+          notes: notesController.text.trim().isEmpty
+              ? null
+              : notesController.text.trim(),
           isReservation: saleType == SaleType.customerSale && isReservation,
           updatedAt: DateTime.now(),
         ),

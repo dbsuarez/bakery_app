@@ -1407,16 +1407,30 @@ class CustomerLedgerScreen extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
 
     final repo = context.read<BakeryRepository>();
+    final lockedBatchIds = <int>{
+      for (final sale in unpaid)
+        if (appState.batchById(sale.batchId)?.locked ?? false) sale.batchId,
+    };
+
     await runGuarded(context, () async {
-      for (final sale in unpaid) {
-        await repo.markSalePaid(sale.id, picked.$1, paymentMethod: picked.$2);
+      for (final batchId in lockedBatchIds) {
+        await repo.unlockBatch(batchId);
       }
-      for (final advance in unpaidAdvances) {
-        await repo.markCashAdvancePaid(
-          advance.id,
-          picked.$1,
-          paymentMethod: picked.$2,
-        );
+      try {
+        for (final sale in unpaid) {
+          await repo.markSalePaid(sale.id, picked.$1, paymentMethod: picked.$2);
+        }
+        for (final advance in unpaidAdvances) {
+          await repo.markCashAdvancePaid(
+            advance.id,
+            picked.$1,
+            paymentMethod: picked.$2,
+          );
+        }
+      } finally {
+        for (final batchId in lockedBatchIds) {
+          await repo.lockBatch(batchId);
+        }
       }
     });
   }
@@ -1657,7 +1671,7 @@ class _TransactionHistorySectionState
                       ),
                   ],
                 ),
-                onLongPress: (_selectMode || sale.paid)
+                onLongPress: _selectMode
                     ? null
                     : () => _showSaleActions(context, sale),
               );
@@ -1702,18 +1716,24 @@ class _TransactionHistorySectionState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (sale.saleType == SaleType.customerSale)
+            if (!sale.paid && sale.saleType == SaleType.customerSale)
               ListTile(
                 leading: const Icon(Icons.swap_horiz),
                 title: const Text('Move to another customer'),
                 onTap: () => Navigator.of(context).pop('move'),
               ),
             ListTile(
-              leading: const Icon(Icons.undo),
-              title: const Text('Reverse (undo) this transaction'),
-              subtitle: const Text('Returns its quantity to the batch'),
-              onTap: () => Navigator.of(context).pop('reverse'),
+              leading: const Icon(Icons.edit_note),
+              title: const Text('Edit note'),
+              onTap: () => Navigator.of(context).pop('note'),
             ),
+            if (!sale.paid)
+              ListTile(
+                leading: const Icon(Icons.undo),
+                title: const Text('Reverse (undo) this transaction'),
+                subtitle: const Text('Returns its quantity to the batch'),
+                onTap: () => Navigator.of(context).pop('reverse'),
+              ),
           ],
         ),
       ),
@@ -1721,9 +1741,65 @@ class _TransactionHistorySectionState
     if (!context.mounted) return;
     if (action == 'move') {
       await _moveToCustomer(context, sale);
+    } else if (action == 'note' && context.mounted) {
+      await _editNote(context, sale);
     } else if (action == 'reverse' && context.mounted) {
       await _reverseSale(context, sale);
     }
+  }
+
+  Future<void> _editNote(BuildContext context, Sale sale) async {
+    final notesController = TextEditingController(text: sale.notes ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit note'),
+        content: TextField(
+          controller: notesController,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Notes (optional)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final repo = context.read<BakeryRepository>();
+    await runGuarded(
+      context,
+      () => repo.updateSale(
+        Sale(
+          id: sale.id,
+          remoteId: sale.remoteId,
+          legacyId: sale.legacyId,
+          batchId: sale.batchId,
+          customerId: sale.customerId,
+          saleDate: sale.saleDate,
+          quantity: sale.quantity,
+          amount: sale.amount,
+          discount: sale.discount,
+          paid: sale.paid,
+          datePaid: sale.datePaid,
+          paymentMethod: sale.paymentMethod,
+          saleType: sale.saleType,
+          notes: notesController.text.trim().isEmpty
+              ? null
+              : notesController.text.trim(),
+          isReservation: sale.isReservation,
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
   }
 
   Future<void> _moveToCustomer(BuildContext context, Sale sale) async {

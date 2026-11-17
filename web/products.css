@@ -1,0 +1,220 @@
+.back-link {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #71370f;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.my-reservations {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 22px;
+}
+
+.my-reservation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e9ded4;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.my-reservation-title { margin: 0; font-size: .98rem; }
+.my-reservation-meta { margin: 2px 0 0; color: #71665f; font-size: .82rem; }
+
+.my-reservation.cancelled { opacity: .55; }
+.my-reservation.cancelled .my-reservation-actions { display: none; }
+
+.my-reservation-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.my-reservation-qty {
+  width: 56px;
+  padding: 7px 8px;
+  border: 1px solid #ddd2c9;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.my-reservation-update, .my-reservation-cancel {
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+}
+
+.my-reservation-update {
+  border: 1px solid #8b4513;
+  background: #fff;
+  color: #71370f;
+}
+
+.my-reservation-cancel {
+  border: 1px solid #ddd2c9;
+  background: #fff;
+  color: #9a2d2d;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e9ded4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(49 33 21 / 5%);
+}
+
+.product-photo-wrap {
+  aspect-ratio: 4 / 3;
+  background: #f3ece3;
+}
+
+.product-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+}
+
+.product-title { margin: 0; font-size: 1.02rem; }
+.product-remaining { margin: 0; color: #71665f; font-size: .85rem; }
+.product-price { margin: 2px 0 10px; font-weight: 750; color: #8b4513; }
+
+.reserve-button {
+  margin-top: auto;
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid #8b4513;
+  border-radius: 999px;
+  color: #71370f;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.reserve-button:disabled {
+  color: #9b8f85;
+  border-color: #d8cdc3;
+  background: #f3ece3;
+  cursor: default;
+}
+
+#reserve-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgb(49 33 21 / 25%);
+}
+
+#reserve-dialog::backdrop {
+  background: rgb(43 33 24 / 45%);
+}
+
+#reserve-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+}
+
+#reserve-form h2 { margin: 0 0 2px; font-size: 1.2rem; }
+#reserve-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: .88rem;
+  color: #665c55;
+}
+
+#reserve-form input, #reserve-form textarea {
+  padding: 10px 12px;
+  border: 1px solid #ddd2c9;
+  border-radius: 10px;
+  font: inherit;
+  resize: vertical;
+}
+
+#reserve-form input[readonly] {
+  background: #f3ece3;
+  color: #665c55;
+}
+
+.reserve-error {
+  margin: 0;
+  color: #b3261e;
+  font-size: .85rem;
+}
+
+.reserve-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.reserve-actions button {
+  min-height: 42px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+#reserve-cancel {
+  border: 1px solid #ddd2c9;
+  background: #fff;
+  color: #665c55;
+}
+
+#reserve-submit {
+  border: 1px solid #8b4513;
+  background: #8b4513;
+  color: #fff;
+}
+
+#reserve-submit:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.reservation-sent {
+  margin-top: auto;
+  padding: 9px 0;
+  color: #2e7d32;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+}

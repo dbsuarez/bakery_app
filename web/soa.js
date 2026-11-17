@@ -25,6 +25,20 @@ function formatDate(value, includeTime = false) {
   }).format(date);
 }
 
+// Modern browsers no longer let a page open the "Add Bookmark" dialog
+// itself (that API was removed from Chrome/Firefox/Safari years ago for
+// security reasons) - the closest honest thing we can do is tell the
+// visitor the right keyboard shortcut for their platform.
+function showBookmarkHint() {
+  const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+  const shortcut = isMac ? '⌘D' : 'Ctrl+D';
+  const toast = document.createElement('div');
+  toast.className = 'bookmark-toast';
+  toast.textContent = `Press ${shortcut} to bookmark this page.`;
+  document.body.append(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
 function showError() {
   const app = document.querySelector('#app');
   app.replaceChildren();
@@ -89,7 +103,7 @@ function renderQr(url, label) {
   return card;
 }
 
-function render(data) {
+function render(data, token) {
   const template = document.querySelector('#statement-template');
   const content = template.content.cloneNode(true);
   const businessName = data.business_name || 'My Bakery';
@@ -164,6 +178,11 @@ function render(data) {
     }
   });
   document.querySelector('#refresh-statement')?.addEventListener('click', () => window.location.reload());
+  const browseProducts = document.querySelector('#browse-products');
+  if (browseProducts) {
+    browseProducts.href = `products.html?soa=${encodeURIComponent(token)}`;
+  }
+  document.querySelector('#bookmark-hint')?.addEventListener('click', showBookmarkHint);
 
   const tabs = [...document.querySelectorAll('.tab-button')];
   const panels = [...document.querySelectorAll('.tab-panel')];
@@ -194,7 +213,7 @@ async function start() {
       body: JSON.stringify({ p_token: token }),
     });
     if (!response.ok) throw new Error(`SOA request failed: ${response.status}`);
-    render(await response.json());
+    render(await response.json(), token);
   } catch (_) {
     showError();
   }

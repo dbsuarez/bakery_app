@@ -7,6 +7,15 @@
 /soa.css
   Cache-Control: no-cache, must-revalidate
 
+/products.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/products.js
+  Cache-Control: no-cache, must-revalidate
+
+/products.css
+  Cache-Control: no-cache, must-revalidate
+
 /index.html
   Cache-Control: no-cache, must-revalidate
 
